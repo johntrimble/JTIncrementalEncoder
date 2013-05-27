@@ -124,7 +124,7 @@ void setup() {
 }
 
 void loop() {
-  static byte position = 0;
+  static int position = 0;
   static byte revolutions = 0;
   static byte previousStepIndex = 0;
   static byte previousState = 0;
@@ -203,13 +203,28 @@ void loop() {
     } else {
       delta = 16 - previousStepIndex + currentStepIndex;
     }
-    position += delta;
     previousStepIndex = currentStepIndex;
     
-    // determine if a revolution has been completed.
+    // update position
+    if( currentDirection == CLOCKWISE ) {
+      position += delta;
+    } else {
+      position -= delta;
+    }
+    
+    // determine if we completed a revolution and fix 
+    byte revolutionCompleted = 0;
     if( position >= DIVISIONS ) {
-      Serial.print("Revolution: "); Serial.println(revolutions++);
+      revolutionCompleted = 1;
       position -= DIVISIONS;
+    } else if( position <= 0 ) {
+      revolutionCompleted = 1;
+      position += DIVISIONS;
+    } 
+
+    // determine if a revolution has been completed.
+    if( revolutionCompleted ) {
+      Serial.print("Index: "); Serial.println(revolutions++);
       digitalWrite(INDEX_INDICATOR_PIN, LOW);
     } else {
       digitalWrite(INDEX_INDICATOR_PIN, HIGH);
