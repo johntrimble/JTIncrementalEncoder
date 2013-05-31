@@ -1,10 +1,12 @@
 #include<SPI.h>
+#include<Wire.h>
 #include "encoder.h"
 #include<MCP42xxx.h>
 
 MCP42xxx pot(10, -1, -1);
 
 // General encoder constants
+static const int SLAVE_ADDRESS = 31;
 static const int DIVISIONS = 92;
 static const int NUMBER_CHANNELS = 2;
 static const int CALIBRATION_PIN = 6;
@@ -25,6 +27,39 @@ static const int CHANNEL_B_RAW_INPUT_PIN = A1;
 static const byte CLOCKWISE = 0;
 static const byte COUNTERCLOCKWISE = 1;
 
+/* I2C interface
+ * Status: Ready, Busy
+ * Error: ...
+ * State: ...
+ * Position: ...
+ * Modes: Calibrating, Reset Home Position, Tracking
+ * Divisions: ...
+ * Identificaion: ...
+ */
+static const byte NUMBER_REGISTERS = 7;
+
+static const byte CALIBRATION_MODE = 1;
+static const byte RESET_HOME_MODE = 2;
+static const byte TRACKING_MODE = 3;
+
+static const byte READY_STATUS = 0;
+static const byte BUSY_STATUS = 1;
+
+static const int STATUS_REGISTER = 0;
+static const int ERROR_REGISTER = 1;
+static const int STATE_REGISTER = 2;
+static const int POSITION_REGISTER = 3;
+static const int MODE_INDEX = 4;
+static const int DIVISION_REGISTER = 5;
+static const int IDENTIFICATION_REGISTER = 6;
+
+static const byte MAX_WRITE_BYTES = 2;
+
+static volatile byte bytesReceivedFromMaster = 0;
+byte receivedData[MAX_WRITE_BYTES];
+static byte registers[NUMBER_REGISTERS];
+
+
 // Interrupt vars
 static byte isrSteps = 0;
 
@@ -35,6 +70,9 @@ static byte isrSteps = 0;
 // - 7th bit is the previous state of channel A
 // - 8th bit is the previous state of channel B
 static volatile byte encoderState = 0;
+
+// Current position
+int currentPosition = 0;
 
 static EncoderChannel channels[NUMBER_CHANNELS];
 
@@ -95,6 +133,87 @@ static void isort(int arr[], int length) {
   }
 }
 
+void initializeRegisters() {
+  registers[STATUS_REGISTER] = READY_STATUS;
+  registers[ERROR_REGISTER] = 0;
+  registers[STATE_REGISTER] = encoderState;
+  registers[POSITION_REGISTER] = currentPosition;
+  registers[MODE_INDEX] = TRACKING_MODE;
+  registers[DIVISION_REGISTER] = DIVISIONS;
+  registers[IDENTIFICATION_REGISTER] = 0;
+}
+
+/**
+ * I2C handler for when master is requesting data from this slave.
+ */
+void requestEvent() {
+  Wire.write(registers + receivedData[0], NUMBER_REGISTERS - receivedData[0]);
+}
+
+/**
+ * I2C handler for when master is writing data to this slave. Format is as follows:
+ * - First byte is always the register address byte.
+ * - Remaining bytes are to be written to registers, starting at the provided address.
+ * If more data is provided than will fit in to the write registers, the excess data is sliently
+ * dropped.
+ */
+void receiveEvent(int bytesReceived) {
+  registers[STATUS_REGISTER] = BUSY_STATUS;
+  for( byte i = 0; i < bytesReceived; i++ ) {
+    if( i < MAX_WRITE_BYTES ) {
+      receivedData[i] = Wire.read();
+    } else {
+      Wire.read();
+    }
+  }
+  bytesReceivedFromMaster = bytesReceived;
+}
+
+/**
+ * Updates the registers based on what the master wrote to this device. We don't do this in the
+ * I2C interrupt handler as it is generally best practice to minimize the amount of time spent
+ * in an interrupt handler.
+ */
+void updateRegisters() {
+  if( bytesReceivedFromMaster ) {
+    int offset = receivedData[0];
+    for(int i = 1; i < bytesReceivedFromMaster; i++ ) {
+      int registerIndex = offset + i - 1;
+      byte temp = receivedData[i];
+      if( registerIndex > 3 && registerIndex < 6 ) { // only registers 4 and 5 are writable
+        if( MODE_INDEX == registerIndex ) {
+          if( !(temp == CALIBRATION_MODE || temp == RESET_HOME_MODE || temp == TRACKING_MODE) ) {
+            temp = TRACKING_MODE;
+          }
+        }
+        registers[registerIndex] = temp;
+      }
+    }
+    bytesReceivedFromMaster = 0;
+    registers[STATUS_REGISTER] = READY_STATUS;
+  }
+  registers[POSITION_REGISTER] = currentPosition;
+  registers[STATE_REGISTER] = encoderState;
+}
+
+inline byte isCalibrationActive() {
+  updateRegisters(); // check if calibration mode changed via I2C
+  return /* LOW == digitalRead(CALIBRATION_PIN) || */ registers[MODE_INDEX] == CALIBRATION_MODE;
+}
+
+inline byte isResetHomeActive() {
+  updateRegisters();
+  return registers[MODE_INDEX] == RESET_HOME_MODE;
+}
+
+inline byte toggleResetHome() {
+  if( registers[MODE_INDEX] == RESET_HOME_MODE ) {
+    registers[MODE_INDEX] = TRACKING_MODE;
+  } else {
+    registers[MODE_INDEX] = RESET_HOME_MODE;
+  }
+}
+
 void setup() {
   SPI.begin();
   Serial.begin(9600);
@@ -116,25 +235,37 @@ void setup() {
     pinMode(channels[i].rawInputPin, INPUT);
   }
   
+  // set up default register values
+  registers[MODE_INDEX] = TRACKING_MODE;
+  
   // set up calibration and reset pin
-  pinMode(CALIBRATION_PIN, INPUT);
+  //pinMode(CALIBRATION_PIN, INPUT);
   pinMode(RESET_PIN, INPUT);
   pinMode(INDEX_INDICATOR_PIN, OUTPUT);
   digitalWrite(INDEX_INDICATOR_PIN, HIGH);
+  
+  // setup I2C interface
+  initializeRegisters();
+  Wire.begin(SLAVE_ADDRESS);
+  Wire.onRequest(requestEvent);
+  Wire.onReceive(receiveEvent);
 }
 
 void loop() {
-  static int position = 0;
   static byte revolutions = 0;
   static byte previousStepIndex = 0;
   static byte previousState = 0;
   static byte previousDirection = CLOCKWISE;
   
+  int positionTemp = currentPosition;
+  
   // handle calibration
-  if( LOW == digitalRead(CALIBRATION_PIN) ) {
+  if( isCalibrationActive() ) {
     Serial.println("Calibrating");
     
-    noInterrupts();
+    //noInterrupts();
+    detachInterrupt(0);
+    detachInterrupt(1);
     
     // set default values
     long total[NUMBER_CHANNELS];
@@ -147,7 +278,7 @@ void loop() {
     
     // collect readings
     long count = 0;
-    while( LOW == digitalRead(CALIBRATION_PIN) ) {
+    while( isCalibrationActive() ) {
       for( int i = 0; i < NUMBER_CHANNELS; i++ ) {
         int value = sample(channels[i].rawInputPin);
         channels[i].minValue = min(channels[i].minValue, value);
@@ -162,7 +293,7 @@ void loop() {
       attachInterrupt(channels[i].interrupt, channels[i].isrFunc, CHANGE);
     }
     
-    interrupts();
+    //interrupts();
     
     // set averages and adjust digital potentiometers accordingly
     for( int i = 0; i < NUMBER_CHANNELS; i++ ) {
@@ -176,11 +307,12 @@ void loop() {
   }
   
   // handle reset
-  if( LOW == digitalRead(RESET_PIN) ) {
+  if( isResetHomeActive() ) {
     Serial.println("Reset");
-    position = 0;
+    positionTemp = 0;
+    currentPosition = 0;
     revolutions = 0;
-    while( LOW == digitalRead(RESET_PIN) );
+    toggleResetHome();
   }
   
   // handle state change
@@ -203,23 +335,22 @@ void loop() {
     } else {
       delta = 16 - previousStepIndex + currentStepIndex;
     }
-    previousStepIndex = currentStepIndex;
     
-    // update position
+    // update positionTemp
     if( currentDirection == CLOCKWISE ) {
-      position += delta;
+      positionTemp += delta;
     } else {
-      position -= delta;
+      positionTemp -= delta;
     }
     
     // determine if we completed a revolution and fix 
     byte revolutionCompleted = 0;
-    if( position >= DIVISIONS ) {
+    if( positionTemp >= DIVISIONS ) {
       revolutionCompleted = 1;
-      position -= DIVISIONS;
-    } else if( position <= 0 ) {
+      positionTemp -= DIVISIONS;
+    } else if( positionTemp <= 0 ) {
       revolutionCompleted = 1;
-      position += DIVISIONS;
+      positionTemp += DIVISIONS;
     } 
 
     // determine if a revolution has been completed.
@@ -229,7 +360,14 @@ void loop() {
     } else {
       digitalWrite(INDEX_INDICATOR_PIN, HIGH);
     }
-  }
+    
+    // update state
+    currentPosition = positionTemp;
+    previousStepIndex = currentStepIndex;
+    
+  } // end handle state change
+  
+  updateRegisters();
 }
 
 

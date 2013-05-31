@@ -11,3 +11,13 @@ typedef struct {
   void (*isrFunc)(void);
 } EncoderChannel;
 
+
+typedef struct {
+  byte status;
+  byte error;
+  byte state;
+  byte position;
+  byte mode;
+  byte divisions;
+  byte identification;
+} EncoderRegisters;
