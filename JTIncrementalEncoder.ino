@@ -1,6 +1,6 @@
 #include<SPI.h>
 #include<Wire.h>
-#include "encoder.h"
+#include "JTIncrementalEncoder.h"
 #include<MCP42xxx.h>
 
 MCP42xxx pot(10, -1, -1);
