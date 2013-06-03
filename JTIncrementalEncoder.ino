@@ -1,3 +1,4 @@
+#include<EEPROM.h>
 #include<SPI.h>
 #include<Wire.h>
 #include "JTIncrementalEncoder.h"
@@ -28,6 +29,7 @@ static const byte CLOCKWISE = 0;
 static const byte COUNTERCLOCKWISE = 1;
 
 /* I2C interface
+ * Control register...
  * Status: Ready, Busy
  * Error: ...
  * State: ...
@@ -44,6 +46,7 @@ static const byte TRACKING_MODE = 3;
 
 static const byte READY_STATUS = 0;
 static const byte BUSY_STATUS = 1;
+static const byte UNCALIBRATED_STATUS = 2;
 
 static const int STATUS_REGISTER = 0;
 static const int ERROR_REGISTER = 1;
@@ -56,8 +59,9 @@ static const int IDENTIFICATION_REGISTER = 6;
 static const byte MAX_WRITE_BYTES = 2;
 
 static volatile byte bytesReceivedFromMaster = 0;
-byte receivedData[MAX_WRITE_BYTES];
+static byte receivedData[MAX_WRITE_BYTES];
 static byte registers[NUMBER_REGISTERS];
+static byte isCalibrated = 0;
 
 
 // Interrupt vars
@@ -122,14 +126,14 @@ static int sample(int pin) {
  * Sorts the given array of integers using insertion sort.
  */
 static void isort(int arr[], int length) {
-  for( int i = 0; i < length; i++ ) {
+  for( int i = 1; i < length; i++ ) {
     int value = arr[i];
-    for( int k = i; k > 0 && arr[k-1] > arr[k]; k-- ) {
-      int tmp = arr[k];
+    int k = i;
+    while( k > 0 && value < arr[k-1] ) {
        arr[k] = arr[k-1];
-       arr[k-1] = tmp;
-       k--;
+       k--;      
     }
+    arr[k] = value;
   }
 }
 
@@ -190,7 +194,7 @@ void updateRegisters() {
       }
     }
     bytesReceivedFromMaster = 0;
-    registers[STATUS_REGISTER] = READY_STATUS;
+    registers[STATUS_REGISTER] = isCalibrated? READY_STATUS : UNCALIBRATED_STATUS;
   }
   registers[POSITION_REGISTER] = currentPosition;
   registers[STATE_REGISTER] = encoderState;
@@ -211,6 +215,75 @@ inline byte toggleResetHome() {
     registers[MODE_INDEX] = TRACKING_MODE;
   } else {
     registers[MODE_INDEX] = RESET_HOME_MODE;
+  }
+}
+
+static int eepromReadInt(int addr) {
+  byte low = EEPROM.read(addr++);
+  byte high = EEPROM.read(addr);
+  return word(high, low);
+}
+
+static void eepromWriteInt(int addr, int value) {
+  byte low = lowByte(value);
+  byte high = highByte(value);
+  EEPROM.write(addr++, low);
+  EEPROM.write(addr, high);
+}
+
+static boolean loadSettings() {
+  boolean rvalue = true;
+  // load settings from EEPROM
+  if( 179 == EEPROM.read(0) ) {
+    Serial.println("Loading settings");
+    // Okay, we've written here before, w00t!
+    int k = 1;
+    for( int i = 0; i < NUMBER_CHANNELS; i++ ) {
+      channels[i].average = eepromReadInt(k);
+      k += 2;
+      channels[i].minValue = eepromReadInt(k);
+      k += 2;
+      channels[i].maxValue = eepromReadInt(k);
+      k += 2;
+    }
+    printChannelInfo();
+  } else {
+    Serial.println("No settings to load");
+    rvalue = false;
+  }
+  return rvalue;
+}
+
+static boolean saveSettings() {
+  boolean rvalue = true;
+  Serial.println("Saving settings");
+  EEPROM.write(0, 179);
+  int k = 1;
+  for( int i = 0; i < NUMBER_CHANNELS; i++ ) {
+    eepromWriteInt(k, channels[i].average);
+    k += 2;
+    eepromWriteInt(k, channels[i].minValue);
+    k += 2;
+    eepromWriteInt(k, channels[i].maxValue);
+    k += 2;
+  }
+  Serial.println("Done saving settings");
+  return rvalue;
+}
+
+static void printChannelInfo() {
+  for( int i = 0; i < NUMBER_CHANNELS; i++ ) {
+    Serial.print("Average: "); Serial.println(channels[i].average);
+    Serial.print("Min: "); Serial.println(channels[i].minValue);
+    Serial.print("Max: "); Serial.println(channels[i].maxValue);
+  }
+}
+
+static void updatePotentiometers() {
+  Serial.println("Updating potentiometers");
+  for( int i = 0; i < NUMBER_CHANNELS; i++ ) {
+    pot.write(channels[i].channel, map(channels[i].average, 0, 1023, 0, 255));
+    attachInterrupt(channels[i].interrupt, channels[i].isrFunc, CHANGE);
   }
 }
 
@@ -235,9 +308,6 @@ void setup() {
     pinMode(channels[i].rawInputPin, INPUT);
   }
   
-  // set up default register values
-  registers[MODE_INDEX] = TRACKING_MODE;
-  
   // set up calibration and reset pin
   //pinMode(CALIBRATION_PIN, INPUT);
   pinMode(RESET_PIN, INPUT);
@@ -246,6 +316,18 @@ void setup() {
   
   // setup I2C interface
   initializeRegisters();
+  
+  // load settings from EEPROM
+  isCalibrated = loadSettings();
+  if( isCalibrated ) {
+    isCalibrated = 1;
+    registers[STATUS_REGISTER] = READY_STATUS;
+    updatePotentiometers();
+  } else {
+    isCalibrated = 0;
+    registers[STATUS_REGISTER] = UNCALIBRATED_STATUS;
+  }
+  
   Wire.begin(SLAVE_ADDRESS);
   Wire.onRequest(requestEvent);
   Wire.onReceive(receiveEvent);
@@ -287,24 +369,15 @@ void loop() {
         count++;
       }
     }
-
-    // attach interrupts
-    for( int i = 0; i < NUMBER_CHANNELS; i++ ) {
-      attachInterrupt(channels[i].interrupt, channels[i].isrFunc, CHANGE);
-    }
-    
-    //interrupts();
     
     // set averages and adjust digital potentiometers accordingly
     for( int i = 0; i < NUMBER_CHANNELS; i++ ) {
       channels[i].average = total[i] / count;
-      pot.write(channels[i].channel, map(channels[i].average, 0, 1023, 0, 255));
-      
-      Serial.print("Average: "); Serial.println(channels[i].average);
-      Serial.print("Min: "); Serial.println(channels[i].minValue);
-      Serial.print("Max: "); Serial.println(channels[i].maxValue);
+      printChannelInfo();
     }
-  }
+    updatePotentiometers();
+    saveSettings();
+  } // end calibration
   
   // handle reset
   if( isResetHomeActive() ) {
