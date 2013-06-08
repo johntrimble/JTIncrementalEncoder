@@ -372,7 +372,8 @@ void loop() {
     
     // set averages and adjust digital potentiometers accordingly
     for( int i = 0; i < NUMBER_CHANNELS; i++ ) {
-      channels[i].average = total[i] / count;
+      //channels[i].average = total[i] / count;
+      channels[i].average = (channels[i].minValue + channels[i].maxValue) / 2;
       printChannelInfo();
     }
     updatePotentiometers();
