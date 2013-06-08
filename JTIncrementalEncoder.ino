@@ -40,13 +40,20 @@ static const byte COUNTERCLOCKWISE = 1;
  */
 static const byte NUMBER_REGISTERS = 7;
 
-static const byte CALIBRATION_MODE = 1;
-static const byte RESET_HOME_MODE = 2;
-static const byte TRACKING_MODE = 3;
+// Configuration register
+// D7 D6 D5 D4 D3 D2 D1 D0 
+// X  X  X  X  X  CM RH TM
+//
+// CM - Calibration Mode (1 means calibrating)
+// RH - Reset Home (1 means resetting home position)
+// TM - Tracking Mode (1 means currently tracking)
+static const byte CALIBRATION_MODE = B00000100;
+static const byte RESET_HOME_MODE  = B00000010;
+static const byte TRACKING_MODE    = B00000001;
 
-static const byte READY_STATUS = 0;
-static const byte BUSY_STATUS = 1;
-static const byte UNCALIBRATED_STATUS = 2;
+static const byte READY_STATUS        = 0;
+static const byte BUSY_STATUS         = B00000010;
+static const byte UNCALIBRATED_STATUS = B00000001;
 
 static const int STATUS_REGISTER = 0;
 static const int ERROR_REGISTER = 1;
@@ -161,8 +168,8 @@ static void requestEvent() {
  * If more data is provided than will fit in to the write registers, the excess data is sliently
  * dropped.
  */
-void receiveEvent(int bytesReceived) {
-  registers[STATUS_REGISTER] = BUSY_STATUS;
+static void receiveEvent(int bytesReceived) {
+  registers[STATUS_REGISTER] |= BUSY_STATUS;
   for( byte i = 0; i < bytesReceived; i++ ) {
     if( i < MAX_WRITE_BYTES ) {
       receivedData[i] = Wire.read();
@@ -186,36 +193,37 @@ static void updateRegisters() {
       byte temp = receivedData[i];
       if( registerIndex > 3 && registerIndex < 6 ) { // only registers 4 and 5 are writable
         if( MODE_INDEX == registerIndex ) {
-          if( !(temp == CALIBRATION_MODE || temp == RESET_HOME_MODE || temp == TRACKING_MODE) ) {
+          if( !(temp&(CALIBRATION_MODE|RESET_HOME_MODE|TRACKING_MODE)) ) {
+            // MODE was not set to a valid value, so just set it to tracking
             temp = TRACKING_MODE;
           }
         }
         registers[registerIndex] = temp;
       }
     }
+    
+    registers[STATUS_REGISTER] &= ~BUSY_STATUS;
     bytesReceivedFromMaster = 0;
-    registers[STATUS_REGISTER] = isCalibrated? READY_STATUS : UNCALIBRATED_STATUS;
   }
+  
+  if( isCalibrated ) {
+    registers[STATUS_REGISTER] &= ~UNCALIBRATED_STATUS;
+  } else {
+    registers[STATUS_REGISTER] |= UNCALIBRATED_STATUS;
+  }
+  
   registers[POSITION_REGISTER] = currentPosition;
   registers[STATE_REGISTER] = encoderState;
 }
 
 inline byte isCalibrationActive() {
   updateRegisters(); // check if calibration mode changed via I2C
-  return /* LOW == digitalRead(CALIBRATION_PIN) || */ registers[MODE_INDEX] == CALIBRATION_MODE;
+  return registers[MODE_INDEX]&CALIBRATION_MODE;
 }
 
 inline byte isResetHomeActive() {
   updateRegisters();
-  return registers[MODE_INDEX] == RESET_HOME_MODE;
-}
-
-inline byte toggleResetHome() {
-  if( registers[MODE_INDEX] == RESET_HOME_MODE ) {
-    registers[MODE_INDEX] = TRACKING_MODE;
-  } else {
-    registers[MODE_INDEX] = RESET_HOME_MODE;
-  }
+  return registers[MODE_INDEX]&RESET_HOME_MODE;
 }
 
 static int eepromReadInt(int addr) {
@@ -279,7 +287,7 @@ static void printChannelInfo() {
   }
 }
 
-static void updatePotentiometers() {
+static void updateVoltageReferences() {
   Serial.println("Updating potentiometers");
   for( int i = 0; i < NUMBER_CHANNELS; i++ ) {
     pot.write(channels[i].channel, map(channels[i].average, 0, 1023, 0, 255));
@@ -321,11 +329,10 @@ void setup() {
   isCalibrated = loadSettings();
   if( isCalibrated ) {
     isCalibrated = 1;
-    registers[STATUS_REGISTER] = READY_STATUS;
-    updatePotentiometers();
+    updateVoltageReferences();
   } else {
     isCalibrated = 0;
-    registers[STATUS_REGISTER] = UNCALIBRATED_STATUS;
+    registers[STATUS_REGISTER] |= UNCALIBRATED_STATUS;
   }
   
   Wire.begin(SLAVE_ADDRESS);
@@ -345,7 +352,6 @@ void loop() {
   if( isCalibrationActive() ) {
     Serial.println("Calibrating");
     
-    //noInterrupts();
     detachInterrupt(0);
     detachInterrupt(1);
     
@@ -376,7 +382,7 @@ void loop() {
       channels[i].average = (channels[i].minValue + channels[i].maxValue) / 2;
       printChannelInfo();
     }
-    updatePotentiometers();
+    updateVoltageReferences();
     saveSettings();
   } // end calibration
   
@@ -386,7 +392,7 @@ void loop() {
     positionTemp = 0;
     currentPosition = 0;
     revolutions = 0;
-    toggleResetHome();
+    registers[MODE_INDEX] &= ~RESET_HOME_MODE;
   }
   
   // handle state change
