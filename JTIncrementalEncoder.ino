@@ -76,7 +76,7 @@ static byte isrSteps = 0;
 static volatile byte encoderState = 0;
 
 // Current position
-int currentPosition = 0;
+static int currentPosition = 0;
 
 static EncoderChannel channels[NUMBER_CHANNELS];
 
@@ -137,7 +137,7 @@ static void isort(int arr[], int length) {
   }
 }
 
-void initializeRegisters() {
+static void initializeRegisters() {
   registers[STATUS_REGISTER] = READY_STATUS;
   registers[ERROR_REGISTER] = 0;
   registers[STATE_REGISTER] = encoderState;
@@ -150,7 +150,7 @@ void initializeRegisters() {
 /**
  * I2C handler for when master is requesting data from this slave.
  */
-void requestEvent() {
+static void requestEvent() {
   Wire.write(registers + receivedData[0], NUMBER_REGISTERS - receivedData[0]);
 }
 
@@ -178,7 +178,7 @@ void receiveEvent(int bytesReceived) {
  * I2C interrupt handler as it is generally best practice to minimize the amount of time spent
  * in an interrupt handler.
  */
-void updateRegisters() {
+static void updateRegisters() {
   if( bytesReceivedFromMaster ) {
     int offset = receivedData[0];
     for(int i = 1; i < bytesReceivedFromMaster; i++ ) {
