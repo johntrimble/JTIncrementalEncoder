@@ -1,13 +1,6 @@
-#include<MCP42xxx.h>
+namespace JTIncrementalEncoder {
 
-typedef struct {
-  int inputPin;
-  int rawInputPin;
-  int interrupt;
-  int average;
-  int minValue;
-  int maxValue;
-  MCP42xxx::Channel channel;
-  void (*isrFunc)(void);
-} EncoderChannel;
 
+
+
+}
