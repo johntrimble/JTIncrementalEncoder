@@ -11,8 +11,6 @@
 
 using namespace JTIncrementalEncoder;
 
-MCP42xxx pot(10, -1, -1);
-
 // General encoder constants
 static const int SLAVE_ADDRESS = 31;
 static const int CALIBRATION_PIN = 6;
@@ -35,6 +33,22 @@ static byte isrSteps = 0;
 static EncoderState state = {};
 
 static EncoderChannelPair& channels = state.channels;
+
+MCP42xxx pot(10, -1, -1);
+Encoder encoder(
+  pot, 
+  EEPROM,
+  Serial,
+  CHANNEL_A_INPUT_PIN, 
+  CHANNEL_A_RAW_INPUT_PIN,
+  MCP42xxx::CHANNEL_0,
+  CHANNEL_A_INTERRUPT,
+  &channelAISR,
+  CHANNEL_B_INPUT_PIN,
+  CHANNEL_B_RAW_INPUT_PIN,
+  MCP42xxx::CHANNEL_1,
+  CHANNEL_B_INTERRUPT,
+  &channelBISR);
 
 ////////////////////////////////////////////////////////
 // Things that deal with channels, position, etc.
@@ -84,24 +98,6 @@ static void initializeChannels() {
   pinMode(channels.a.rawInputPin, INPUT);
   pinMode(channels.b.inputPin, INPUT);
   pinMode(channels.b.rawInputPin, INPUT);
-}
-
-void handleCalibration(JTIncrementalEncoder::EncoderChannelPair& channels) {
-  Serial.println("Calibrating");
-  
-  detachInterrupt(0);
-  detachInterrupt(1);
-  
-  runCalibration(channels);
-
-  printChannelInfo(channels.a);
-  printChannelInfo(channels.b);
-  updateVoltageReferences();
-
-  attachInterrupt(channels.a.interrupt, channels.a.isrFunc, CHANGE);
-  attachInterrupt(channels.b.interrupt, channels.b.isrFunc, CHANGE);
-
-  saveSettings(0, channels);
 }
 
 // Note: Passing in by reference here is a performance optimization. This function should *not* actually change these 
@@ -154,40 +150,54 @@ void loop() {
   static byte previousState = 0;
   static byte previousDirection = CLOCKWISE;
   static byte revolutions = 0;
+  static uint8_t calibrating = 0;
   
-  int positionTemp = state.position;
-  
-  if( EncoderInterface.getCalibrationMode() ) {
-    handleCalibration(channels);
+  uint8_t newCalibratingValue = EncoderInterface.getCalibrationMode();
+
+  if( !calibrating && newCalibratingValue ) {
+    Serial.println("Calibrating");
+    startCalibration(channels);
+  } else if( calibrating && !newCalibratingValue ) {
+    stopCalibration(channels);
+    saveSettings(0, channels);
+    printChannelInfo(channels.a);
+    printChannelInfo(channels.b);
+    updateVoltageReferences();
   }
-  
-  // handle reset
-  if( EncoderInterface.getResetHomeMode() ) {
-    Serial.println("Reset");
-    positionTemp = 0;
-    state.position = 0;
-    revolutions = 0;
-    EncoderInterface.setResetHomeMode(false);
+
+  calibrating = newCalibratingValue;
+
+  if( calibrating ) {
+    updateCalibrating(channels);
+  } else {
+    int positionTemp = state.position;
+
+    if( EncoderInterface.getResetHomeMode() ) {
+      Serial.println("Reset");
+      positionTemp = 0;
+      state.position = 0;
+      revolutions = 0;
+      EncoderInterface.setResetHomeMode(false);
+    }
+
+    // handle state change
+    byte currentState = state.encoderState;
+    if( previousState != currentState ) {
+      byte currentDirection = getDirection(currentState);
+      
+      // update positionTemp
+      byte revolutionCompleted = updatePosition(previousState, currentState, positionTemp);
+      if( revolutionCompleted )
+        revolutions++;
+      positionDidChange(revolutionCompleted, revolutions, previousDirection, state.position, currentDirection, positionTemp);
+      
+      // update state
+      previousState = currentState;
+      state.position = positionTemp;
+      previousDirection = currentDirection;
+      
+    } // end handle state change
   }
-  
-  // handle state change
-  byte currentState = state.encoderState;
-  if( previousState != currentState ) {
-    byte currentDirection = getDirection(currentState);
-    
-    // update positionTemp
-    byte revolutionCompleted = updatePosition(previousState, currentState, positionTemp);
-    if( revolutionCompleted )
-      revolutions++;
-    positionDidChange(revolutionCompleted, revolutions, previousDirection, state.position, currentDirection, positionTemp);
-    
-    // update state
-    previousState = currentState;
-    state.position = positionTemp;
-    previousDirection = currentDirection;
-    
-  } // end handle state change
-  
   EncoderInterface.update(state);
 }
 

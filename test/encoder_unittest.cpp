@@ -5,13 +5,74 @@
 #include "interface.h"
 #include "encoder.cpp"
 #include "Arduino.h"
+#include "MCP42xxx.h"
+#include "gmock/gmock.h"
 
 using namespace JTIncrementalEncoder;
 
+// Channel A
+static const int CHANNEL_A_INPUT_PIN = 2;
+static const int CHANNEL_A_INTERRUPT = 0;
+static const int CHANNEL_A_RAW_INPUT_PIN = 5;
+
+// Channel B
+static const int CHANNEL_B_INPUT_PIN = 3;
+static const int CHANNEL_B_INTERRUPT = 1;
+static const int CHANNEL_B_RAW_INPUT_PIN = 6;
+
+void MCP42xxx::write(MCP42xxx::Channel channel, uint8_t value) { }
+
+class MockPot {
+public:
+  MOCK_METHOD2(write, void(MCP42xxx::Channel channel, uint8_t value));
+};
+
+class NopLog {
+public:
+  size_t println(const char s[]) { return 0; }
+  size_t println(unsigned char c) { return 0; }
+  size_t print(const char s[]) { return 0; }
+  size_t print(unsigned char) { return 0; }
+};
+
+class MockStorage {
+public:
+  MOCK_METHOD1(read, uint8_t(int addr));
+  MOCK_METHOD2(write, void(int addr, uint8_t val));
+};
+
 class EncoderTestSuite : public testing::Test {
+public:
+  Encoder<MockPot, MockStorage, NopLog> *encoder;
+  NopLog *log;
+  MockStorage *storage;
+  MockPot *pot;
+
   void SetUp() {
+    pot = new MockPot();
+    storage = new MockStorage();
+    log = new NopLog();
+    encoder = new Encoder<MockPot, MockStorage, NopLog>(
+      *pot, 
+      *storage, 
+      *log,  
+      CHANNEL_A_INPUT_PIN, 
+      CHANNEL_A_RAW_INPUT_PIN,
+      MCP42xxx::CHANNEL_0,
+      CHANNEL_A_INTERRUPT,
+      NULL,
+      CHANNEL_B_INPUT_PIN,
+      CHANNEL_B_RAW_INPUT_PIN,
+      MCP42xxx::CHANNEL_1,
+      CHANNEL_B_INTERRUPT,
+      NULL);
   }
+
   void TearDown() {
+    delete encoder;
+    delete log;
+    delete storage;
+    delete pot;
   }
 };
 
@@ -48,17 +109,17 @@ TEST_F(EncoderTestSuite, isort_returns_sorted_one_out_of_place) {
 }
 
 TEST_F(EncoderTestSuite, getDirection_CLOCKWISE) {
-  EXPECT_EQ(CLOCKWISE, getDirection(0x12)); // 00010010
-  EXPECT_EQ(CLOCKWISE, getDirection(0x79)); // 01111001
-  EXPECT_EQ(CLOCKWISE, getDirection(0x8D)); // 10001101
-  EXPECT_EQ(CLOCKWISE, getDirection(0xE6)); // 11100110
+  EXPECT_EQ(CLOCKWISE, this->encoder->getDirection(0x12)); // 00010010
+  EXPECT_EQ(CLOCKWISE, this->encoder->getDirection(0x79)); // 01111001
+  EXPECT_EQ(CLOCKWISE, this->encoder->getDirection(0x8D)); // 10001101
+  EXPECT_EQ(CLOCKWISE, this->encoder->getDirection(0xE6)); // 11100110
 }
 
 TEST_F(EncoderTestSuite, getDirection_COUNTERCLOCKWISE) {
-  EXPECT_EQ(COUNTERCLOCKWISE, getDirection(0xD2)); // 11010010
-  EXPECT_EQ(COUNTERCLOCKWISE, getDirection(0x49)); // 01001001
-  EXPECT_EQ(COUNTERCLOCKWISE, getDirection(0xBD)); // 10111101
-  EXPECT_EQ(COUNTERCLOCKWISE, getDirection(0xD6)); // 11010110
+  EXPECT_EQ(COUNTERCLOCKWISE, this->encoder->getDirection(0xD2)); // 11010010
+  EXPECT_EQ(COUNTERCLOCKWISE, this->encoder->getDirection(0x49)); // 01001001
+  EXPECT_EQ(COUNTERCLOCKWISE, this->encoder->getDirection(0xBD)); // 10111101
+  EXPECT_EQ(COUNTERCLOCKWISE, this->encoder->getDirection(0xD6)); // 11010110
 }
 
 TEST_F(EncoderTestSuite, sample_all_same) {
@@ -178,11 +239,6 @@ TEST_F(EncoderTestSuite, runCalibration) {
   std::vector<int> analog_b_values;
   std::vector<uint8_t> is_calibration_active_values;
 
-  EncoderChannelPair channels;
-
-  channels.a.rawInputPin = 5;
-  channels.b.rawInputPin = 6;
-
   for( int i = 0; i < 100; i++ ) {
     analog_a_values.push_back(analog_values_a_arr[i]);
   }
@@ -193,21 +249,28 @@ TEST_F(EncoderTestSuite, runCalibration) {
   }
   pinMock.set_analog_value_sequence(6, analog_b_values);
 
+  this->encoder->startCalibration();
+
+  // make sure we initialized the encoder state appropriately for calibration.
+  EXPECT_EQ(0, this->encoder->getState().channels.a.maxValue);
+  EXPECT_EQ(0, this->encoder->getState().channels.b.maxValue);
+  EXPECT_EQ(1023, this->encoder->getState().channels.a.minValue);
+  EXPECT_EQ(1023, this->encoder->getState().channels.b.minValue);
+
   for( int i = 0; i < 20; i++ ) {
-    is_calibration_active_values.push_back(1);
+    this->encoder->update();
   }
-  is_calibration_active_values.push_back(0);
-  EncoderInterface.set_calibration_mode_sequence(is_calibration_active_values);
+  this->encoder->stopCalibration();
 
-  runCalibration(channels);
+  // Did channel A get configured correclty?
+  EXPECT_EQ(229, this->encoder->getState().channels.a.maxValue);
+  EXPECT_EQ(44, this->encoder->getState().channels.a.minValue);
+  EXPECT_EQ((229+44) / 2, this->encoder->getState().channels.a.average);
 
-  EXPECT_EQ(229, channels.a.maxValue);
-  EXPECT_EQ(44, channels.a.minValue);
-  EXPECT_EQ((229+44) / 2, channels.a.average);
-
-  EXPECT_EQ(200, channels.b.maxValue);
-  EXPECT_EQ(66, channels.b.minValue);
-  EXPECT_EQ((200+66) / 2, channels.b.average);
+  // Did channel B get configured correctly?
+  EXPECT_EQ(200, this->encoder->getState().channels.b.maxValue);
+  EXPECT_EQ(66, this->encoder->getState().channels.b.minValue);
+  EXPECT_EQ((200+66) / 2, this->encoder->getState().channels.b.average);
 }
 
 TEST_F(EncoderTestSuite, updatePosition) {

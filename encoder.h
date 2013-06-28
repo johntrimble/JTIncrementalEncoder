@@ -4,7 +4,6 @@
 #include <MCP42xxx.h>
 #include "Arduino.h"
 #include "inttypes.h"
-#include "interface.h"
 
 namespace JTIncrementalEncoder {
 
@@ -46,6 +45,49 @@ typedef struct {
   int position;
 } EncoderState;
 
+template <typename POT, typename STORAGE, typename LOG>
+class Encoder {
+  POT& pot;
+  STORAGE& storage;
+  LOG& log;
+  EncoderState state;
+  uint8_t calibrating;
+  uint8_t revolutions;
+
+  void updateVoltageReference();
+  void positionDidChange(
+    const uint8_t& revolutionCompleted,
+    const uint8_t& revolutions,
+    const uint8_t& previousDirection, 
+    const int& previousPosition, 
+    const uint8_t& currentDirection, 
+    const int& currentPosition);
+  uint8_t saveSettings();
+  uint8_t loadSettings();
+
+public:
+  Encoder(
+    POT& pot,
+    STORAGE& EEPROM,
+    LOG& log,
+    uint8_t channelAInputPin, 
+    uint8_t channelARawInputPin,
+    MCP42xxx::Channel channelApotChannel,
+    uint8_t channelAInterrupt,
+    void (*channelAIsrFunc)(void),
+    uint8_t channelBInputPin,
+    uint8_t channelBRawInputPin,
+    MCP42xxx::Channel channelBpotChannel,
+    uint8_t channelBInterrupt,
+    void (*channelBIsrFunc)(void));
+  const EncoderState& getState();
+  uint8_t getDirection(uint8_t encoderState);
+  void resetPosition();
+  void startCalibration();
+  void stopCalibration();
+  void update();
+};
+
 // Direction
 const uint8_t CLOCKWISE = 0;
 const uint8_t COUNTERCLOCKWISE = 1;
@@ -56,7 +98,11 @@ uint8_t saveSettings(int addr, const EncoderChannelPair& channels);
 void isort(int arr[], int length);
 uint8_t getDirection(uint8_t encoderState);
 uint8_t sample(uint8_t pin);
-void runCalibration(EncoderChannelPair& channelPair);
+
+void startCalibration(EncoderChannelPair& channelPair);
+void updateCalibration(EncoderChannelPair& channelPair);
+void stopCalibration(EncoderChannelPair& channelPair);
+
 uint8_t updatePosition(uint8_t previousState, uint8_t currentState, int &position);
 
 static inline void updateChannelAEncoderState(const EncoderChannel& channel, volatile uint8_t& encoderState, uint8_t& isrSteps) {

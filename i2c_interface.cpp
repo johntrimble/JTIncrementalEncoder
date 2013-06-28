@@ -41,7 +41,7 @@ static const uint8_t IDENTIFICATION_REGISTER = 6;
 static void requestEvent();
 static void receiveEvent(int bytesReceived);
 
-EncoderInterface::EncoderInterface(TwoWire& twoWire) : twoWire(twoWire) {
+EncoderInterface::EncoderInterface(TwoWire& twoWire, Encoder& encoder) : twoWire(twoWire), encoder(encoder) {
   this->registers[STATUS_REGISTER] = READY_STATUS;
   this->registers[ERROR_REGISTER] = 0;
   this->registers[STATE_REGISTER] = 0;
@@ -63,19 +63,6 @@ void EncoderInterface::begin(uint8_t slaveAddress) {
  * in an interrupt handler.
  */
 void EncoderInterface::update(EncoderState& state) {
-  this->update();
-
-  if( state.calibrated ) {
-    this->registers[STATUS_REGISTER] &= ~UNCALIBRATED_STATUS;
-  } else {
-    this->registers[STATUS_REGISTER] |= UNCALIBRATED_STATUS;
-  }
-  
-  this->registers[POSITION_REGISTER] = state.position;
-  this->registers[STATE_REGISTER] = state.encoderState;
-}
-
-void EncoderInterface::update() {
   if( this->bytesReceivedFromMaster ) {
     int offset = this->receivedData[0];
     for(int i = 1; i < this->bytesReceivedFromMaster; i++ ) {
@@ -95,6 +82,39 @@ void EncoderInterface::update() {
     this->registers[STATUS_REGISTER] &= ~BUSY_STATUS;
     this->bytesReceivedFromMaster = 0;
   }
+
+  if( state.calibrated ) {
+    this->registers[STATUS_REGISTER] &= ~UNCALIBRATED_STATUS;
+  } else {
+    this->registers[STATUS_REGISTER] |= UNCALIBRATED_STATUS;
+  }
+  
+  this->registers[POSITION_REGISTER] = state.position;
+  this->registers[STATE_REGISTER] = state.encoderState;
+}
+
+void EncoderInterface::update() {
+  static uint8_t calibrating = 0;
+  uint8_t newCalibratingValue = this->getCalibrationMode();
+
+  // update registers
+  this->update(this->encoder.state);
+
+  // Are we starting or stoping calibration (or neither)? 
+  if( !calibrating && newCalibratingValue ) {
+    this->encoder.startCalibration();
+  } else if( calibrating && !newCalibratingValue ) {
+    this->stopCalibration();
+  }
+  
+  // Reset the home position if needed.
+  if( this->getResetHomeMode() ) {
+    this->encoder.resetPosition();
+    this->setResetHomeMode(0);
+  }
+
+  // update encoder
+  this->encoder.update();
 }
 
 uint8_t EncoderInterface::getCalibrationMode() {

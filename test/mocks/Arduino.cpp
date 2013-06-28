@@ -65,10 +65,22 @@ void digitalWrite(uint8_t pin, uint8_t value) {
   pinMock.write_digital_value(pin, value);
 }
 
+void pinMode(uint8_t pin, uint8_t mode) {}
+
 int analogRead(uint8_t pin) {
   return pinMock.next_analog_value(pin);
 }
 
-void detachInterrupt(uint8_t) {
+void detachInterrupt(uint8_t interrupt) {
 
 }
+
+void attachInterrupt(uint8_t interrupt, void (*f)(void), int mode) { 
+
+}
+
+int map(int value, int sourceStart, int sourceEnd, int destStart, int destEnd) {
+  return (value * ((float)(destEnd-destStart) / (float)(sourceEnd-sourceStart))) + destStart;
+}
+
+HardwareSerial Serial;

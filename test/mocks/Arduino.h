@@ -4,12 +4,31 @@
 #include <vector>
 #include "inttypes.h"
 
+#define CHANGE 1
+#define FALLING 2
+#define RISING 3
+
+#define INPUT 0x0
+#define OUTPUT 0x1
+#define INPUT_PULLUP 0x2
+
+#define true 0x1
+#define false 0x0
+
 #define min(X, Y)  ((X) < (Y) ? (X) : (Y))
 #define max(X, Y)  ((X) > (Y) ? (X) : (Y))
 
 #define lowByte(X) ((uint8_t)X)
 #define highByte(X) ((uint8_t)((X) >> 8))
 #define word(H,L) ((uint16_t)(((H) << 8)|L))
+
+#define DEC 10
+#define HEX 16
+#define OCT 8
+#define BIN 2
+
+#define HIGH 0x1
+#define LOW  0x0
 
 static const int NUMBER_DIGITAL_PINS = 14;
 static const int NUMBER_ANALOG_PINS = 6;
@@ -45,8 +64,42 @@ uint8_t digitalRead(uint8_t pin);
 
 void digitalWrite(uint8_t pin, uint8_t value);
 
+void pinMode(uint8_t pin, uint8_t mode);
+
 int analogRead(uint8_t pin);
 
 void detachInterrupt(uint8_t);
+
+void attachInterrupt(uint8_t, void (*)(void), int mode);
+
+int map(int value, int sourceStart, int sourceEnd, int destStart, int destEnd);
+
+class Print {
+public:
+  inline size_t print(const char[]) { return 0; }
+  inline size_t print(char) { return 0; }
+  inline size_t print(unsigned char, int = DEC) { return 0; }
+  inline size_t print(int, int = DEC) { return 0; }
+  inline size_t print(unsigned int, int = DEC) { return 0; }
+  inline size_t print(long, int = DEC) { return 0; }
+  inline size_t print(unsigned long, int = DEC) { return 0; }
+  inline size_t print(double, int = 2) { return 0; }
+
+  inline size_t println(const char[]) { return 0; }
+  inline size_t println(char) { return 0; }
+  inline size_t println(unsigned char, int = DEC) { return 0; }
+  inline size_t println(int, int = DEC) { return 0; }
+  inline size_t println(unsigned int, int = DEC) { return 0; }
+  inline size_t println(long, int = DEC) { return 0; }
+  inline size_t println(unsigned long, int = DEC) { return 0; }
+  inline size_t println(double, int = 2) { return 0; }
+  inline size_t println(void) { return 0; }
+};
+
+class HardwareSerial : public Print {
+
+};
+
+extern HardwareSerial Serial;
 
 #endif

@@ -8,12 +8,13 @@ namespace JTIncrementalEncoder {
 
 class EncoderInterface {
   TwoWire& twoWire;
+  Encoder& encoder;
   uint8_t registers[NUMBER_REGISTERS];
   uint8_t receivedData[MAX_WRITE_BYTES];
   uint8_t bytesReceivedFromMaster;
 
 public:
-  EncoderInterface(TwoWire& twoWire);
+  EncoderInterface(TwoWire& twoWire, Encoder& encoder);
   void begin(uint8_t slaveAddress);
 
   void update(EncoderState& state);
