@@ -41,7 +41,8 @@ static const uint8_t IDENTIFICATION_REGISTER = 6;
 static void requestEvent();
 static void receiveEvent(int bytesReceived);
 
-EncoderInterface::EncoderInterface(TwoWire& twoWire, Encoder& encoder) : twoWire(twoWire), encoder(encoder) {
+template <typename WIRE, typename ENCODER>
+EncoderInterface<WIRE,ENCODER>::EncoderInterface(WIRE& twoWire, ENCODER& encoder) : twoWire(twoWire), encoder(encoder) {
   this->registers[STATUS_REGISTER] = READY_STATUS;
   this->registers[ERROR_REGISTER] = 0;
   this->registers[STATE_REGISTER] = 0;
@@ -51,7 +52,8 @@ EncoderInterface::EncoderInterface(TwoWire& twoWire, Encoder& encoder) : twoWire
   this->registers[IDENTIFICATION_REGISTER] = 0;
 }
 
-void EncoderInterface::begin(uint8_t slaveAddress) {
+template <typename WIRE, typename ENCODER>
+void EncoderInterface<WIRE,ENCODER>::begin(uint8_t slaveAddress) {
   this->twoWire.begin(slaveAddress);
   this->twoWire.onReceive(&JTIncrementalEncoder::receiveEvent);
   this->twoWire.onRequest(&JTIncrementalEncoder::requestEvent);
@@ -62,7 +64,8 @@ void EncoderInterface::begin(uint8_t slaveAddress) {
  * I2C interrupt handler as it is generally best practice to minimize the amount of time spent
  * in an interrupt handler.
  */
-void EncoderInterface::update(EncoderState& state) {
+template <typename WIRE, typename ENCODER>
+void EncoderInterface<WIRE,ENCODER>::update(EncoderState& state) {
   if( this->bytesReceivedFromMaster ) {
     int offset = this->receivedData[0];
     for(int i = 1; i < this->bytesReceivedFromMaster; i++ ) {
@@ -93,7 +96,8 @@ void EncoderInterface::update(EncoderState& state) {
   this->registers[STATE_REGISTER] = state.encoderState;
 }
 
-void EncoderInterface::update() {
+template <typename WIRE, typename ENCODER>
+void EncoderInterface<WIRE,ENCODER>::update() {
   static uint8_t calibrating = 0;
   uint8_t newCalibratingValue = this->getCalibrationMode();
 
@@ -117,50 +121,11 @@ void EncoderInterface::update() {
   this->encoder.update();
 }
 
-uint8_t EncoderInterface::getCalibrationMode() {
-  this->update(); // check if calibration mode changed via I2C
-  return this->registers[MODE_INDEX]&CALIBRATION_MODE;
-}
-
-void EncoderInterface::setCalibrationMode(uint8_t val) {
-  this->update();
-  if( val )
-    this->registers[MODE_INDEX] |= CALIBRATION_MODE;
-  else
-    this->registers[MODE_INDEX] &= ~CALIBRATION_MODE;
-}
-
-uint8_t EncoderInterface::getResetHomeMode() {
-  this->update();
-  return this->registers[MODE_INDEX]&RESET_HOME_MODE;
-}
-
-void EncoderInterface::setResetHomeMode(uint8_t val) {
-  this->update();
-  if( val ) {
-    this->registers[MODE_INDEX] |= RESET_HOME_MODE;
-  } else {
-    this->registers[MODE_INDEX] &= ~RESET_HOME_MODE;
-  }
-}
-
-uint8_t EncoderInterface::getCalibratedStatus() {
-  return this->registers[STATUS_REGISTER] & UNCALIBRATED_STATUS ? 1 : 0;
-}
-
-void EncoderInterface::setCalibratedStatus(uint8_t val) {
-  if( val ) {
-    this->registers[STATUS_REGISTER] &= ~UNCALIBRATED_STATUS;
-  } else {
-    this->registers[STATUS_REGISTER] |= UNCALIBRATED_STATUS;
-  }
-}
-
-void EncoderInterface::requestEvent() {
+void EncoderInterface<WIRE,ENCODER>::requestEvent() {
   this->twoWire.write(this->registers + this->receivedData[0], NUMBER_REGISTERS - this->receivedData[0]);
 }
 
-void EncoderInterface::receiveEvent(int bytesReceived) {
+void EncoderInterface<WIRE,ENCODER>::receiveEvent(int bytesReceived) {
   this->registers[STATUS_REGISTER] |= BUSY_STATUS;
   for( byte i = 0; i < bytesReceived; i++ ) {
     if( i < MAX_WRITE_BYTES ) {
@@ -189,7 +154,5 @@ static void requestEvent() {
 static void receiveEvent(int bytesReceived) {
   EncoderInterface.receiveEvent(bytesReceived);
 }
-
-EncoderInterface::EncoderInterface EncoderInterface(Wire);
 
 }

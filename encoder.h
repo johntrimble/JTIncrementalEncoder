@@ -13,6 +13,10 @@ const uint8_t MAX_WRITE_BYTES = 2;
 const int NUMBER_CHANNELS = 2;
 const int DIVISIONS = 92;
 
+// Direction
+const uint8_t CLOCKWISE = 0;
+const uint8_t COUNTERCLOCKWISE = 1;
+
 typedef struct {
   int inputPin;
   int rawInputPin;
@@ -62,9 +66,6 @@ class Encoder {
     const int& previousPosition, 
     const uint8_t& currentDirection, 
     const int& currentPosition);
-  uint8_t saveSettings();
-  uint8_t loadSettings();
-
 public:
   Encoder(
     POT& pot,
@@ -85,25 +86,13 @@ public:
   void resetPosition();
   void startCalibration();
   void stopCalibration();
+  uint8_t saveSettings(STORAGE& storage, int addr);
+  uint8_t loadSettings(STORAGE& storage, int addr);
   void update();
 };
 
-// Direction
-const uint8_t CLOCKWISE = 0;
-const uint8_t COUNTERCLOCKWISE = 1;
-
-uint8_t loadSettings(int addr, EncoderChannelPair& channels);
-uint8_t saveSettings(int addr, const EncoderChannelPair& channels);
-  
-void isort(int arr[], int length);
-uint8_t getDirection(uint8_t encoderState);
 uint8_t sample(uint8_t pin);
-
-void startCalibration(EncoderChannelPair& channelPair);
-void updateCalibration(EncoderChannelPair& channelPair);
-void stopCalibration(EncoderChannelPair& channelPair);
-
-uint8_t updatePosition(uint8_t previousState, uint8_t currentState, int &position);
+void isort(int arr[], int length);
 
 static inline void updateChannelAEncoderState(const EncoderChannel& channel, volatile uint8_t& encoderState, uint8_t& isrSteps) {
   encoderState = ((encoderState << 2)&0xC0/*B11000000*/)|(encoderState&0x20/*B00100000*/)|(digitalRead(channel.inputPin)<<4)|(isrSteps&0x0F/*B00001111*/);

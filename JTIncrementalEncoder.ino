@@ -35,7 +35,7 @@ static EncoderState state = {};
 static EncoderChannelPair& channels = state.channels;
 
 MCP42xxx pot(10, -1, -1);
-Encoder encoder(
+Encoder<MCP42xxx,EEPROMClass,Print> encoder(
   pot, 
   EEPROM,
   Serial,
@@ -49,6 +49,7 @@ Encoder encoder(
   MCP42xxx::CHANNEL_1,
   CHANNEL_B_INTERRUPT,
   &channelBISR);
+EncoderInterface<Encoder<MCP42xxx,EEPROMClass,Print> > i2cSlave(Wire, encoder);
 
 ////////////////////////////////////////////////////////
 // Things that deal with channels, position, etc.

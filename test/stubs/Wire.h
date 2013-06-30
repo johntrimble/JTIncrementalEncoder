@@ -11,6 +11,4 @@ class TwoWire {
   int read();
 };
 
-extern TwoWire Wire;
-
 #endif

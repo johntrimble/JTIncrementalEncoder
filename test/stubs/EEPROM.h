@@ -16,6 +16,4 @@ class EEPROMClass
     std::vector<uint8_t>& get_buffer();
 };
 
-extern EEPROMClass EEPROM;
-
 #endif

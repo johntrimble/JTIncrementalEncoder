@@ -5,33 +5,26 @@ namespace JTIncrementalEncoder {
 
 static const int INDEX_INDICATOR_PIN = 7;
 
-static int eepromReadInt(int addr);
-static void eepromWriteInt(int addr, int value);
-static uint8_t loadSettings(EncoderChannel& channel, int& addr);
-static uint8_t saveSettings(const EncoderChannel& channel, int& addr);
-static void updateVoltageReference(EncoderChannel& channel, MCP42xxx& pot);
-static inline void positionDidChange(
-    const uint8_t& revolutionCompleted,
-    const uint8_t& revolutions,
-    const uint8_t& previousDirection, 
-    const int& previousPosition, 
-    const uint8_t& currentDirection, 
-    const int& currentPosition);
+static void startCalibration(EncoderChannelPair& channelPair);
+static void updateCalibration(EncoderChannelPair& channelPair);
+static void stopCalibration(EncoderChannelPair& channelPair);
+static uint8_t getDirection(uint8_t encoderState);
+static uint8_t updatePosition(uint8_t previousState, uint8_t currentState, int &position);
 
 template<typename POT>
-static void updateVoltageReference(JTIncrementalEncoder::EncoderChannel& channel, POT& pot) {
+static inline void updateVoltageReference(JTIncrementalEncoder::EncoderChannel& channel, POT& pot) {
   pot.write(channel.channel, map(channel.average, 0, 1023, 0, 255));
 }
 
 template<typename STORAGE>
-static int eepromReadInt(STORAGE& storage, int addr) {
+static inline int eepromReadInt(STORAGE& storage, int addr) {
   uint8_t low = storage.read(addr++);
   uint8_t high = storage.read(addr);
   return word(high, low);
 }
 
 template<typename STORAGE>
-static void eepromWriteInt(STORAGE& storage, int addr, int value) {
+static inline void eepromWriteInt(STORAGE& storage, int addr, int value) {
   uint8_t low = lowByte(value);
   uint8_t high = highByte(value);
   storage.write(addr++, low);
@@ -46,6 +39,7 @@ uint8_t loadSettings(STORAGE& storage, EncoderChannel& channel, int& addr) {
   addr += 2;
   channel.maxValue = eepromReadInt(storage, addr);
   addr += 2;
+  return 0;
 }
 
 template<typename STORAGE>
@@ -127,7 +121,6 @@ template <typename POT, typename STORAGE, typename LOG>
 void Encoder<POT,STORAGE, LOG>::stopCalibration() { 
   JTIncrementalEncoder::stopCalibration(this->state.channels);
   this->updateVoltageReference();
-  this->saveSettings();
   this->calibrating = 0;
 }
 
@@ -157,26 +150,24 @@ void Encoder<POT,STORAGE, LOG>::update() {
 }
 
 template <typename POT, typename STORAGE, typename LOG>
-uint8_t Encoder<POT,STORAGE, LOG>::saveSettings() {
+uint8_t Encoder<POT,STORAGE, LOG>::saveSettings(STORAGE& storage, int addr) {
   uint8_t rvalue = true;
-  int addr = 0;
-  this->storage.write(addr, 179);
+  storage.write(addr, 179);
   addr++;
-  JTIncrementalEncoder::saveSettings(this->storage, this->state.channels.a, addr);
-  JTIncrementalEncoder::saveSettings(this->storage, this->state.channels.b, addr);
+  JTIncrementalEncoder::saveSettings(storage, this->state.channels.a, addr);
+  JTIncrementalEncoder::saveSettings(storage, this->state.channels.b, addr);
   return rvalue;
 }
 
 template <typename POT, typename STORAGE, typename LOG>
-uint8_t Encoder<POT,STORAGE, LOG>::loadSettings() {
+uint8_t Encoder<POT,STORAGE, LOG>::loadSettings(STORAGE& storage, int addr) {
   uint8_t rvalue = true;
-  int addr = 0;
   // load settings from EEPROM
-  if( 179 == this->storage.read(addr) ) {
+  if( 179 == storage.read(addr) ) {
     // Okay, we've written here before, w00t!
     addr++;
-    JTIncrementalEncoder::loadSettings(this->storage, this->state.channels.a, addr);
-    JTIncrementalEncoder::loadSettings(this->storage, this->state.channels.b, addr);
+    JTIncrementalEncoder::loadSettings(storage, this->state.channels.a, addr);
+    JTIncrementalEncoder::loadSettings(storage, this->state.channels.b, addr);
   } else {
     rvalue = false;
   }
@@ -220,65 +211,10 @@ void isort(int arr[], int length) {
   }
 }
 
-static int eepromReadInt(int addr) {
-  uint8_t low = EEPROM.read(addr++);
-  uint8_t high = EEPROM.read(addr);
-  return word(high, low);
-}
-
-static void eepromWriteInt(int addr, int value) {
-  uint8_t low = lowByte(value);
-  uint8_t high = highByte(value);
-  EEPROM.write(addr++, low);
-  EEPROM.write(addr, high);
-}
-
-uint8_t loadSettings(EncoderChannel& channel, int& addr) {
-  channel.average = eepromReadInt(addr);
-  addr += 2;
-  channel.minValue = eepromReadInt(addr);
-  addr += 2;
-  channel.maxValue = eepromReadInt(addr);
-  addr += 2;
-}
-
-uint8_t saveSettings(const EncoderChannel& channel, int& addr) {
-  eepromWriteInt(addr, channel.average);
-  addr += 2;
-  eepromWriteInt(addr, channel.minValue);
-  addr += 2;
-  eepromWriteInt(addr, channel.maxValue);
-  addr += 2;
-  return true;
-}
-
-uint8_t loadSettings(int addr, EncoderChannelPair& channels) {
-  uint8_t rvalue = true;
-  // load settings from EEPROM
-  if( 179 == EEPROM.read(addr) ) {
-    // Okay, we've written here before, w00t!
-    addr++;
-    loadSettings(channels.a, addr);
-    loadSettings(channels.b, addr);
-  } else {
-    rvalue = false;
-  }
-  return rvalue;
-}
-
-uint8_t saveSettings(int addr, const EncoderChannelPair& channels) {
-  uint8_t rvalue = true;
-  EEPROM.write(addr, 179);
-  addr++;
-  saveSettings(channels.a, addr);
-  saveSettings(channels.b, addr);
-  return rvalue;
-}
-
 /**
  * Given the encoder state, returns the current direction.
  */
-uint8_t getDirection(uint8_t encoderState) {
+static uint8_t getDirection(uint8_t encoderState) {
   uint8_t graycode = encoderState&0xF0; // 11110000
   switch(graycode) {
     case 0xE0: // 11100000
@@ -304,8 +240,7 @@ uint8_t sample(uint8_t pin) {
   return readings[2];
 }
 
-void startCalibration(EncoderChannelPair& channelPair) {
-  EncoderChannel *channels = &(channelPair.a);
+static inline void startCalibration(EncoderChannelPair& channelPair) {
   detachInterrupt(0);
   detachInterrupt(1);
 
@@ -317,7 +252,7 @@ void startCalibration(EncoderChannelPair& channelPair) {
   channelPair.b.maxValue = 0;
 }
 
-void updateCalibration(EncoderChannelPair& channelPair) {
+static inline void updateCalibration(EncoderChannelPair& channelPair) {
   EncoderChannel *channels = &(channelPair.a);
   for( int i = 0; i < NUMBER_CHANNELS; i++ ) {
     int value = sample(channels[i].rawInputPin);
@@ -326,7 +261,7 @@ void updateCalibration(EncoderChannelPair& channelPair) {
   }
 }
 
-void stopCalibration(EncoderChannelPair& channelPair) {
+static inline void stopCalibration(EncoderChannelPair& channelPair) {
   EncoderChannel *channels = &(channelPair.a);
   // set averages and adjust digital potentiometers accordingly
   for( int i = 0; i < NUMBER_CHANNELS; i++ ) {
@@ -337,31 +272,7 @@ void stopCalibration(EncoderChannelPair& channelPair) {
   attachInterrupt(channelPair.b.interrupt, channelPair.b.isrFunc, CHANGE);
 }
 
-// Note: Passing in by reference here is a performance optimization. This function should *not* actually change these 
-// values. This really only matters for the 'int' parameters, but is done for all of the for consistency.
-static inline void positionDidChange(
-    const uint8_t& revolutionCompleted,
-    const uint8_t& revolutions,
-    const uint8_t& previousDirection, 
-    const int& previousPosition, 
-    const uint8_t& currentDirection, 
-    const int& currentPosition) {
-  
-  // determine if direction changed
-  if( currentDirection != previousDirection ) {
-    Serial.println("Direction changed");
-  }
-
-  // determine if a revolution has been completed.
-  if( revolutionCompleted ) {
-    Serial.print("Index: "); Serial.println(revolutions);
-    digitalWrite(INDEX_INDICATOR_PIN, LOW);
-  } else {
-    digitalWrite(INDEX_INDICATOR_PIN, HIGH);
-  }
-}
-
-uint8_t updatePosition(uint8_t previousState, uint8_t currentState, int &position) {
+static uint8_t updatePosition(uint8_t previousState, uint8_t currentState, int &position) {
   uint8_t currentDirection = getDirection(currentState);
   uint8_t currentStepIndex = (currentState&0x0F/*B00001111*/) + 1;
   uint8_t previousStepIndex = (previousState&0x0F/*B00001111*/) + 1;
@@ -393,6 +304,6 @@ uint8_t updatePosition(uint8_t previousState, uint8_t currentState, int &positio
   return revolutionCompleted;
 }
   
-template class Encoder<MCP42xxx,EEPROMClass, Print>;
+template class Encoder<MCP42xxx,EEPROMClass,Print>;
 
 }

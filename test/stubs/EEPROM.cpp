@@ -13,5 +13,3 @@ void EEPROMClass::write(int addr, uint8_t data) {
 std::vector<uint8_t>& EEPROMClass::get_buffer() {
   return buffer;
 }
-
-EEPROMClass EEPROM(2048);

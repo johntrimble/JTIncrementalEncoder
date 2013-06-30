@@ -8,10 +8,10 @@ USER_DIR = ..
 TEST_DIR = $(USER_DIR)/test
 
 CPPFLAGS += -isystem $(GTEST_DIR)/include -isystem $(GMOCK_DIR)/include
-CXXFLAGS += -g -Wall -Wextra -pthread
+CXXFLAGS += -g -Wall -Wextra -Wno-unused-parameter -pthread
 
 # All tests produced by this Makefile.
-TESTS = encoder_unittest
+TESTS = encoder_unittest interface_unittest
 
 # All Google Test headers.
 GTEST_HEADERS = $(GTEST_DIR)/include/gtest/*.h \
@@ -32,11 +32,11 @@ GMOCK_SRCS_ = $(GMOCK_DIR)/src/*.cc $(GMOCK_HEADERS)
 
 gtest-all.o : $(GTEST_SRCS_)
 	$(CXX) $(CPPFLAGS) -I$(GTEST_DIR) -I$(GMOCK_DIR) $(CXXFLAGS) \
-            -c $(GTEST_DIR)/src/gtest-all.cc
+			-Wno-missing-field-initializers -c $(GTEST_DIR)/src/gtest-all.cc
 
 gmock-all.o : $(GMOCK_SRCS_)
 	$(CXX) $(CPPFLAGS) -I$(GTEST_DIR) -I$(GMOCK_DIR) $(CXXFLAGS) \
-            -c $(GMOCK_DIR)/src/gmock-all.cc
+            -Wno-missing-field-initializers -c $(GMOCK_DIR)/src/gmock-all.cc
 
 gmock_main.o : $(GMOCK_SRCS_)
 	$(CXX) $(CPPFLAGS) -I$(GTEST_DIR) -I$(GMOCK_DIR) $(CXXFLAGS) \
@@ -48,27 +48,35 @@ gmock.a : gmock-all.o gtest-all.o
 gmock_main.a : gmock-all.o gtest-all.o gmock_main.o
 	$(AR) $(ARFLAGS) $@ $^
 
-# Build mocks
-$(TEST_DIR)/Arduino.o : $(TEST_DIR)/mocks/Arduino.cpp $(TEST_DIR)/mocks/Arduino.h 
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(TEST_DIR)/mocks/Arduino.cpp
+# Build stubs
+$(TEST_DIR)/Arduino.o : $(TEST_DIR)/stubs/Arduino.cpp $(TEST_DIR)/stubs/Arduino.h 
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(TEST_DIR)/stubs/Arduino.cpp
 
-$(TEST_DIR)/EEPROM.o : $(TEST_DIR)/mocks/EEPROM.cpp $(TEST_DIR)/mocks/EEPROM.h
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(TEST_DIR)/mocks/EEPROM.cpp
+$(TEST_DIR)/EEPROM.o : $(TEST_DIR)/stubs/EEPROM.cpp $(TEST_DIR)/stubs/EEPROM.h
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(TEST_DIR)/stubs/EEPROM.cpp
 
-$(TEST_DIR)/Wire.o : $(TEST_DIR)/mocks/Wire.cpp $(TEST_DIR)/mocks/Wire.h
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(TEST_DIR)/mocks/Wire.cpp
+$(TEST_DIR)/Wire.o : $(TEST_DIR)/stubs/Wire.cpp $(TEST_DIR)/stubs/Wire.h
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(TEST_DIR)/stubs/Wire.cpp
 
-$(TEST_DIR)/interface_stub.o : $(TEST_DIR)/mocks/interface_stub.cpp $(TEST_DIR)/mocks/interface.h
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -I$(TEST_DIR)/mocks -I$(USER_DIR) -I$(TEST_DIR) -c $(TEST_DIR)/mocks/interface_stub.cpp
-
-# Build tests
+# Encoder Unit Test
 encoder_unittest.o : $(TEST_DIR)/encoder_unittest.cpp \
 					 $(TEST_DIR)/Arduino.o \
 					 $(TEST_DIR)/EEPROM.o \
 					 $(TEST_DIR)/Wire.o \
-					 $(TEST_DIR)/interface_stub.o \
                      $(GTEST_HEADERS)
-	$(CXX) $(CPPFLAGS) -I$(TEST_DIR)/mocks -I$(USER_DIR) -I$(TEST_DIR) $(CXXFLAGS) -c $(TEST_DIR)/encoder_unittest.cpp
+	$(CXX) $(CPPFLAGS) -I$(TEST_DIR)/stubs -I$(USER_DIR) -I$(TEST_DIR) $(CXXFLAGS) -c $(TEST_DIR)/encoder_unittest.cpp
 
-encoder_unittest : encoder_unittest.o $(TEST_DIR)/Arduino.o $(TEST_DIR)/EEPROM.o $(TEST_DIR)/Wire.o $(TEST_DIR)/interface_stub.o gmock_main.a
+encoder_unittest : encoder_unittest.o $(TEST_DIR)/Arduino.o $(TEST_DIR)/EEPROM.o $(TEST_DIR)/Wire.o gmock_main.a
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -lpthread $^ -o $@
+
+
+# Interface Unit Test
+interface_unittest.o : $(TEST_DIR)/interface_unittest.cpp \
+			 $(TEST_DIR)/Arduino.o \
+			 $(TEST_DIR)/EEPROM.o \
+			 $(TEST_DIR)/Wire.o \
+             $(GTEST_HEADERS)
+	$(CXX) $(CPPFLAGS) -I$(TEST_DIR)/stubs -I$(USER_DIR) -I$(TEST_DIR) $(CXXFLAGS) -c $(TEST_DIR)/interface_unittest.cpp
+
+interface_unittest : interface_unittest.o $(TEST_DIR)/Arduino.o $(TEST_DIR)/EEPROM.o $(TEST_DIR)/Wire.o gmock_main.a
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -lpthread $^ -o $@

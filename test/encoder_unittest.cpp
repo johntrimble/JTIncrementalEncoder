@@ -1,12 +1,11 @@
 #include <gtest/gtest.h>
+#include <gmock/gmock.h>
 #include <vector>
 #include <bitset>
 #include <string>
-#include "interface.h"
 #include "encoder.cpp"
 #include "Arduino.h"
 #include "MCP42xxx.h"
-#include "gmock/gmock.h"
 
 using namespace JTIncrementalEncoder;
 
@@ -41,7 +40,7 @@ public:
   MOCK_METHOD2(write, void(int addr, uint8_t val));
 };
 
-class EncoderTestSuite : public testing::Test {
+class EncoderTestSuite : public ::testing::Test {
 public:
   Encoder<MockPot, MockStorage, NopLog> *encoder;
   NopLog *log;
@@ -260,6 +259,9 @@ TEST_F(EncoderTestSuite, runCalibration) {
   for( int i = 0; i < 20; i++ ) {
     this->encoder->update();
   }
+
+  EXPECT_CALL(*(this->pot), write(::testing::_, ::testing::_))
+    .Times(2);
   this->encoder->stopCalibration();
 
   // Did channel A get configured correclty?
@@ -292,32 +294,48 @@ TEST_F(EncoderTestSuite, updatePosition) {
   EXPECT_EQ(5, position);
 }
 
-TEST_F(EncoderTestSuite, saveSettings_loadSettings) {
-  // create some encoder settings
-  EncoderChannelPair pair;
-  pair.a.minValue = 5;
-  pair.a.maxValue = 120;
-  pair.a.average = 70;
-  pair.b.minValue = 23;
-  pair.b.maxValue = 1022;
-  pair.b.average = 571;
+TEST_F(EncoderTestSuite, saveSettings) {
+  EXPECT_CALL(*(this->storage), write(::testing::_, ::testing::_))
+    .Times(12);
+  EXPECT_CALL(*(this->storage), write(5, 179))
+    .Times(1);    
 
   // save the encoder pair
   int addr = 5;
-  saveSettings(pair.a, addr);
-  saveSettings(pair.b, addr);
+  this->encoder->saveSettings(*(this->storage), addr);
+}
 
-  // load the encoder pair
-  EncoderChannelPair loadedPair;
-  addr = 5;
-  loadSettings(loadedPair.a, addr);
-  loadSettings(loadedPair.b, addr);
+TEST_F(EncoderTestSuite, loadSettings) {
+  ::testing::InSequence S;
+  // average, min, max
+  int addr = 0;
+  uint8_t data[13] = { 
+    179, 
+    0, 3, // 768
+    72, 0, // 72
+    255, 3, // 1023
+    65, 1, // 321
+    2, 0, // 2
+    0, 3 // 768
+  };
+  for(int i = 0; i < 13; i++ ) {
+    EXPECT_CALL(*(this->storage), read(i))
+      .WillOnce(::testing::Return(data[i]));
+  }
+  uint8_t rvalue = this->encoder->loadSettings(*(this->storage), addr);
+  EXPECT_EQ(true, rvalue);
+  EXPECT_EQ(768, this->encoder->getState().channels.a.average);
+  EXPECT_EQ(72, this->encoder->getState().channels.a.minValue);
+  EXPECT_EQ(1023, this->encoder->getState().channels.a.maxValue);
+  EXPECT_EQ(321, this->encoder->getState().channels.b.average);
+  EXPECT_EQ(2, this->encoder->getState().channels.b.minValue);
+  EXPECT_EQ(768, this->encoder->getState().channels.b.maxValue);
+}
 
-  // is what we loaded the same as what we saved?
-  EXPECT_EQ(pair.a.minValue, loadedPair.a.minValue);
-  EXPECT_EQ(pair.a.maxValue, loadedPair.a.maxValue);
-  EXPECT_EQ(pair.a.average, loadedPair.a.average);
-  EXPECT_EQ(pair.b.minValue, loadedPair.b.minValue);
-  EXPECT_EQ(pair.b.maxValue, loadedPair.b.maxValue);
-  EXPECT_EQ(pair.b.average, loadedPair.b.average);
+TEST_F(EncoderTestSuite, loadSettings_badKey) {
+  int addr = 0;
+  EXPECT_CALL(*(this->storage), read(addr))
+    .WillOnce(::testing::Return(178));
+  uint8_t rvalue = this->encoder->loadSettings(*(this->storage), addr);
+  EXPECT_EQ(false, rvalue);
 }
