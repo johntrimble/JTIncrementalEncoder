@@ -1,45 +1,12 @@
 #include <Wire.h>
+#include <EEPROM.h>
+#include <MCP42xxx.h>
 #include "interface.h"
 
 namespace JTIncrementalEncoder {
 
-/* I2C interface
- * Control register...
- * Status: Ready, Busy
- * Error: ...
- * State: ...
- * Position: ...
- * Modes: Calibrating, Reset Home Position, Tracking
- * Divisions: ...
- * Identificaion: ...
- */
-
-
-// Configuration register
-// D7 D6 D5 D4 D3 D2 D1 D0 
-// X  X  X  X  X  CM RH TM
-//
-// CM - Calibration Mode (1 means calibrating)
-// RH - Reset Home (1 means resetting home position)
-// TM - Tracking Mode (1 means currently tracking)
-static const uint8_t CALIBRATION_MODE = B00000100;
-static const uint8_t RESET_HOME_MODE  = B00000010;
-static const uint8_t TRACKING_MODE    = B00000001;
-
-static const uint8_t READY_STATUS        = 0;
-static const uint8_t BUSY_STATUS         = B00000010;
-static const uint8_t UNCALIBRATED_STATUS = B00000001;
-
-static const uint8_t STATUS_REGISTER = 0;
-static const uint8_t ERROR_REGISTER = 1;
-static const uint8_t STATE_REGISTER = 2;
-static const uint8_t POSITION_REGISTER = 3;
-static const uint8_t MODE_INDEX = 4;
-static const uint8_t DIVISION_REGISTER = 5;
-static const uint8_t IDENTIFICATION_REGISTER = 6;
-
-static void requestEvent();
-static void receiveEvent(int bytesReceived);
+template <typename WIRE, typename ENCODER>
+EncoderInterface<WIRE,ENCODER> *EncoderInterface<WIRE,ENCODER>::singleton = NULL;
 
 template <typename WIRE, typename ENCODER>
 EncoderInterface<WIRE,ENCODER>::EncoderInterface(WIRE& twoWire, ENCODER& encoder) : twoWire(twoWire), encoder(encoder) {
@@ -50,22 +17,33 @@ EncoderInterface<WIRE,ENCODER>::EncoderInterface(WIRE& twoWire, ENCODER& encoder
   this->registers[MODE_INDEX] = TRACKING_MODE;
   this->registers[DIVISION_REGISTER] = DIVISIONS;
   this->registers[IDENTIFICATION_REGISTER] = 0;
+  this->bytesReceivedFromMaster = 0;
+  for( uint8_t i = 0; i < MAX_WRITE_BYTES; i++ ) {
+    this->receivedData[i] = 0;
+  }
 }
 
+/**
+ * Calls begin(..) on the TwoWire object with the provided slave address. Also adds the approriate interrupt handlers
+ * to the TwoWire object for processing master writes and reads.
+ */
 template <typename WIRE, typename ENCODER>
 void EncoderInterface<WIRE,ENCODER>::begin(uint8_t slaveAddress) {
+  EncoderInterface<WIRE,ENCODER>::singleton = this;
+  // TODO: we call begin(..) here for the Wire library, but we don't do this for all our dependencies. This should be
+  // made consistent.
   this->twoWire.begin(slaveAddress);
-  this->twoWire.onReceive(&JTIncrementalEncoder::receiveEvent);
-  this->twoWire.onRequest(&JTIncrementalEncoder::requestEvent);
+  this->twoWire.onReceive(&EncoderInterface<WIRE,ENCODER>::receiveEvent);
+  this->twoWire.onRequest(&EncoderInterface<WIRE,ENCODER>::requestEvent);
 }
 
 /**
  * Updates the registers based on what the master wrote to this device. We don't do this in the
- * I2C interrupt handler as it is generally best practice to minimize the amount of time spent
+ * receiveEvent(..) interrupt handler as it is generally best practice to minimize the amount of time spent
  * in an interrupt handler.
  */
 template <typename WIRE, typename ENCODER>
-void EncoderInterface<WIRE,ENCODER>::update(EncoderState& state) {
+void EncoderInterface<WIRE,ENCODER>::update(const EncoderState& state) {
   if( this->bytesReceivedFromMaster ) {
     int offset = this->receivedData[0];
     for(int i = 1; i < this->bytesReceivedFromMaster; i++ ) {
@@ -81,9 +59,7 @@ void EncoderInterface<WIRE,ENCODER>::update(EncoderState& state) {
         this->registers[registerIndex] = temp;
       }
     }
-    
-    this->registers[STATUS_REGISTER] &= ~BUSY_STATUS;
-    this->bytesReceivedFromMaster = 0;
+    this->setBusyStatus(0);
   }
 
   if( state.calibrated ) {
@@ -96,21 +72,26 @@ void EncoderInterface<WIRE,ENCODER>::update(EncoderState& state) {
   this->registers[STATE_REGISTER] = state.encoderState;
 }
 
+/**
+ * Call this from the main loop. Triggers the updating of state by reading data written from master device, taking
+ * appropriate actions given register values, and calls update(..) on the encoder.
+ */
 template <typename WIRE, typename ENCODER>
 void EncoderInterface<WIRE,ENCODER>::update() {
   static uint8_t calibrating = 0;
   uint8_t newCalibratingValue = this->getCalibrationMode();
 
   // update registers
-  this->update(this->encoder.state);
+  this->update(this->encoder.getState());
 
   // Are we starting or stoping calibration (or neither)? 
   if( !calibrating && newCalibratingValue ) {
     this->encoder.startCalibration();
   } else if( calibrating && !newCalibratingValue ) {
-    this->stopCalibration();
+    this->encoder.stopCalibration();
   }
-  
+  calibrating = newCalibratingValue;
+
   // Reset the home position if needed.
   if( this->getResetHomeMode() ) {
     this->encoder.resetPosition();
@@ -121,38 +102,43 @@ void EncoderInterface<WIRE,ENCODER>::update() {
   this->encoder.update();
 }
 
+/**
+ * Interrupt handler for when master device reads data. Will allow reading of registers starting from the register 
+ * number previously written in the first byte of from the master device. If the master device has yet to write data,
+ * then reading will start with reigster 0.
+ */
+template <typename WIRE, typename ENCODER>
 void EncoderInterface<WIRE,ENCODER>::requestEvent() {
-  this->twoWire.write(this->registers + this->receivedData[0], NUMBER_REGISTERS - this->receivedData[0]);
+  EncoderInterface<WIRE,ENCODER>::singleton->twoWire.write(
+    EncoderInterface<WIRE,ENCODER>::singleton->registers + EncoderInterface<WIRE,ENCODER>::singleton->receivedData[0], 
+    NUMBER_REGISTERS - EncoderInterface<WIRE,ENCODER>::singleton->receivedData[0]);
 }
 
+/**
+ * Interrupt handler for when master device writes data. The first byte of data indicates to the register number to 
+ * start writing data into. The remaining bytes are written to registers in sequence. If a register cannot be written 
+ * to, then the data that was attempted to be written there will be dropped. If there are insufficient registers for
+ * all the data being written, then the extra bytes will be dropped. If the status is currently Busy, then all bytes
+ * written will be dropped.
+ */
+template <typename WIRE, typename ENCODER>
 void EncoderInterface<WIRE,ENCODER>::receiveEvent(int bytesReceived) {
-  this->registers[STATUS_REGISTER] |= BUSY_STATUS;
-  for( byte i = 0; i < bytesReceived; i++ ) {
-    if( i < MAX_WRITE_BYTES ) {
-      this->receivedData[i] = this->twoWire.read();
-    } else {
-      this->twoWire.read();
+  uint8_t bytesRead = 0;
+  if( !EncoderInterface<WIRE,ENCODER>::singleton->getBusyStatus() ) {
+    EncoderInterface<WIRE,ENCODER>::singleton->setBusyStatus(1);
+    for( ; bytesRead < bytesReceived && bytesRead < MAX_WRITE_BYTES; bytesRead++ ) {
+      EncoderInterface<WIRE,ENCODER>::singleton->receivedData[bytesRead] = 
+        EncoderInterface<WIRE,ENCODER>::singleton->twoWire.read();
     }
+    EncoderInterface<WIRE,ENCODER>::singleton->bytesReceivedFromMaster = bytesReceived;
   }
-  this->bytesReceivedFromMaster = bytesReceived;
+  for( uint8_t i = 0; i < bytesReceived - bytesRead; i++ ) {
+    EncoderInterface<WIRE,ENCODER>::singleton->twoWire.read();
+  }
 }
 
-/**
- * I2C handler for when master is requesting data from this slave.
- */
-static void requestEvent() {
-  EncoderInterface.requestEvent();
-}
-
-/**
- * I2C handler for when master is writing data to this slave. Format is as follows:
- * - First byte is always the register address byte.
- * - Remaining bytes are to be written to registers, starting at the provided address.
- * If more data is provided than will fit in to the write registers, the excess data is sliently
- * dropped.
- */
-static void receiveEvent(int bytesReceived) {
-  EncoderInterface.receiveEvent(bytesReceived);
-}
+#ifndef JTIncrementalEncoder_SKIP_DEFAULT_TEMPLATE_INSTANTIATION
+template class EncoderInterface<TwoWire, Encoder<MCP42xxx, EEPROMClass, Print> >;
+#endif
 
 }

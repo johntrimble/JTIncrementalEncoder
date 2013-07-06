@@ -103,7 +103,7 @@ uint8_t Encoder<POT,STORAGE, LOG>::getDirection(uint8_t encoderState) {
 }
 
 template <typename POT, typename STORAGE, typename LOG>
-const EncoderState& Encoder<POT,STORAGE, LOG>::getState() { return this->state; }
+const EncoderState& Encoder<POT,STORAGE, LOG>::getState() const { return this->state; }
 
 template <typename POT, typename STORAGE, typename LOG>
 void Encoder<POT,STORAGE, LOG>::resetPosition() {
@@ -303,7 +303,9 @@ static uint8_t updatePosition(uint8_t previousState, uint8_t currentState, int &
 
   return revolutionCompleted;
 }
-  
+
+#ifndef JTIncrementalEncoder_SKIP_DEFAULT_TEMPLATE_INSTANTIATION
 template class Encoder<MCP42xxx,EEPROMClass,Print>;
+#endif
 
 }

@@ -1,3 +1,6 @@
+// Prevent default template instantiation 
+#define JTIncrementalEncoder_SKIP_DEFAULT_TEMPLATE_INSTANTIATION 1
+
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 #include <vector>

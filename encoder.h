@@ -1,14 +1,11 @@
 #ifndef encoder_h
 #define encoder_h
 
+#include <inttypes.h>
 #include <MCP42xxx.h>
 #include "Arduino.h"
-#include "inttypes.h"
 
 namespace JTIncrementalEncoder {
-
-const uint8_t NUMBER_REGISTERS = 7;
-const uint8_t MAX_WRITE_BYTES = 2;
 
 const int NUMBER_CHANNELS = 2;
 const int DIVISIONS = 92;
@@ -54,7 +51,6 @@ class Encoder {
   POT& pot;
   STORAGE& storage;
   LOG& log;
-  EncoderState state;
   uint8_t calibrating;
   uint8_t revolutions;
 
@@ -67,6 +63,8 @@ class Encoder {
     const uint8_t& currentDirection, 
     const int& currentPosition);
 public:
+  // TODO: make the 'state' instance variable private and fix whatever is causing it to be public.
+  EncoderState state;
   Encoder(
     POT& pot,
     STORAGE& EEPROM,
@@ -81,7 +79,8 @@ public:
     MCP42xxx::Channel channelBpotChannel,
     uint8_t channelBInterrupt,
     void (*channelBIsrFunc)(void));
-  const EncoderState& getState();
+
+  const EncoderState& getState() const;
   uint8_t getDirection(uint8_t encoderState);
   void resetPosition();
   void startCalibration();
@@ -93,6 +92,14 @@ public:
 
 uint8_t sample(uint8_t pin);
 void isort(int arr[], int length);
+
+
+template <typename PRINT>
+inline void printChannelInfo(PRINT& p, EncoderChannel& channel) {
+  p.print("Average: "); p.println(channel.average);
+  p.print("Min: "); p.println(channel.minValue);
+  p.print("Max: "); p.println(channel.maxValue);
+}
 
 static inline void updateChannelAEncoderState(const EncoderChannel& channel, volatile uint8_t& encoderState, uint8_t& isrSteps) {
   encoderState = ((encoderState << 2)&0xC0/*B11000000*/)|(encoderState&0x20/*B00100000*/)|(digitalRead(channel.inputPin)<<4)|(isrSteps&0x0F/*B00001111*/);
