@@ -174,21 +174,24 @@ TEST_F(InterfaceTestSuite, master_write_reset_home) {
 }
 
 TEST_F(InterfaceTestSuite, master_read_from_start_point) {
+  // put slave in the calibration mode
   this->interface->setCalibrationMode(1);
 
-  // tell slave where to start reading
+  // tell slave the master wants to read starting from the MODE register
   EXPECT_CALL(*(this->twoWire), read())
-    .WillOnce(::testing::Return(0x04));
+    .WillOnce(::testing::Return(MODE_INDEX));
   this->interface->receiveEvent(1);
+
+  // call update which will start calibration
   EXPECT_CALL(*(this->encoder), startCalibration());
   EXPECT_CALL(*(this->encoder), update());
   this->interface->update();
 
-  // start reading data
+  // tell slave to send master data (which should be the mode)
   uint8_t mode_value;
   EXPECT_CALL(*(this->twoWire), write(::testing::_, ::testing::_))
     .WillOnce(::testing::SaveArgPointee<0>(&mode_value));
   this->interface->requestEvent();
   // mode tracking (0x01) + mode calibrating (0x04) = 0x05
-  EXPECT_EQ(0x05, mode_value);
+  EXPECT_EQ(CALIBRATION_MODE+TRACKING_MODE, mode_value);
 }

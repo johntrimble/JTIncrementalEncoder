@@ -89,6 +89,8 @@ Encoder<POT,STORAGE, LOG>::Encoder(
   pinMode(this->state.channels.b.inputPin, INPUT);
   pinMode(this->state.channels.b.rawInputPin, INPUT);
 
+  // make this for debugging only
+  pinMode(INDEX_INDICATOR_PIN, OUTPUT);
 }
 
 template <typename POT, typename STORAGE, typename LOG>
