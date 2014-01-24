@@ -40,7 +40,7 @@ typedef struct {
   // A1: the previous value of channel A
   // B1: the previous value of channel B
   // A0: the current value of channel A
-  // B1: the current value of channel B
+  // B0: the current value of channel B
   // D0-D3: the current index, incremented on every state transition.
   volatile uint8_t encoderState;
   int position;

@@ -177,7 +177,7 @@ uint8_t Encoder<POT,STORAGE, LOG>::loadSettings(STORAGE& storage, int addr) {
 }
 
 // Note: Passing in by reference here is a performance optimization. This function should *not* actually change these 
-// values. This really only matters for the 'int' parameters, but is done for all of the for consistency.
+// values. This really only matters for the 'int' parameters, but is done for all of them for consistency.
 template <typename POT, typename STORAGE, typename LOG>
 inline void Encoder<POT,STORAGE, LOG>::positionDidChange(
     const uint8_t& revolutionCompleted,
