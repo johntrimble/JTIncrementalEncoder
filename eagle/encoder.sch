@@ -9313,6 +9313,8 @@ Source: 008-0260-0_E.pdf</description>
 <part name="POWER" library="SparkFun-Connectors" deviceset="M02" device="PTH"/>
 <part name="P+14" library="supply1" deviceset="+5V" device=""/>
 <part name="GND12" library="supply1" deviceset="GND" device=""/>
+<part name="R15" library="resistor" deviceset="R-US_" device="R1206" value="0"/>
+<part name="R16" library="resistor" deviceset="R-US_" device="R1206" value="0"/>
 </parts>
 <sheets>
 <sheet>
@@ -9348,8 +9350,8 @@ Source: 008-0260-0_E.pdf</description>
 <instance part="R6" gate="G$1" x="66.04" y="111.76"/>
 <instance part="R7" gate="G$1" x="78.74" y="55.88"/>
 <instance part="U2" gate="G$1" x="71.12" y="185.42"/>
-<instance part="R8" gate="G$1" x="114.3" y="208.28"/>
-<instance part="R9" gate="G$1" x="124.46" y="210.82"/>
+<instance part="R8" gate="G$1" x="127" y="182.88"/>
+<instance part="R9" gate="G$1" x="106.68" y="180.34"/>
 <instance part="R10" gate="G$1" x="25.4" y="134.62"/>
 <instance part="J1" gate="G$1" x="43.18" y="132.08"/>
 <instance part="P+11" gate="1" x="60.96" y="134.62" rot="R270"/>
@@ -9372,9 +9374,11 @@ Source: 008-0260-0_E.pdf</description>
 <instance part="GND11" gate="1" x="119.38" y="144.78" rot="R180"/>
 <instance part="P+13" gate="1" x="124.46" y="137.16"/>
 <instance part="I2C" gate="G$1" x="121.92" y="200.66" rot="R180"/>
-<instance part="POWER" gate="G$1" x="124.46" y="180.34" rot="R180"/>
-<instance part="P+14" gate="1" x="106.68" y="180.34" rot="R90"/>
-<instance part="GND12" gate="1" x="114.3" y="177.8" rot="R270"/>
+<instance part="POWER" gate="G$1" x="127" y="170.18" rot="R180"/>
+<instance part="P+14" gate="1" x="109.22" y="170.18" rot="R90"/>
+<instance part="GND12" gate="1" x="114.3" y="167.64" rot="R270"/>
+<instance part="R15" gate="G$1" x="101.6" y="182.88"/>
+<instance part="R16" gate="G$1" x="116.84" y="182.88"/>
 </instances>
 <busses>
 </busses>
@@ -9464,7 +9468,7 @@ Source: 008-0260-0_E.pdf</description>
 <segment>
 <pinref part="POWER" gate="G$1" pin="1"/>
 <pinref part="P+14" gate="1" pin="+5V"/>
-<wire x1="109.22" y1="180.34" x2="116.84" y2="180.34" width="0.1524" layer="91"/>
+<wire x1="111.76" y1="170.18" x2="119.38" y2="170.18" width="0.1524" layer="91"/>
 </segment>
 </net>
 <net name="GND" class="0">
@@ -9544,6 +9548,7 @@ Source: 008-0260-0_E.pdf</description>
 <segment>
 <pinref part="POWER" gate="G$1" pin="2"/>
 <pinref part="GND12" gate="1" pin="GND"/>
+<wire x1="119.38" y1="167.64" x2="116.84" y2="167.64" width="0.1524" layer="91"/>
 </segment>
 </net>
 <net name="B-REF" class="0">
@@ -9631,25 +9636,11 @@ Source: 008-0260-0_E.pdf</description>
 <label x="71.12" y="111.76" size="1.778" layer="95"/>
 </segment>
 </net>
-<net name="N$6" class="0">
-<segment>
-<pinref part="U2" gate="G$1" pin="PC1(ADC1)"/>
-<pinref part="R8" gate="G$1" pin="1"/>
-<wire x1="109.22" y1="208.28" x2="96.52" y2="208.28" width="0.1524" layer="91"/>
-</segment>
-</net>
-<net name="N$7" class="0">
-<segment>
-<pinref part="U2" gate="G$1" pin="PC0(ADC0)"/>
-<pinref part="R9" gate="G$1" pin="1"/>
-<wire x1="119.38" y1="210.82" x2="96.52" y2="210.82" width="0.1524" layer="91"/>
-</segment>
-</net>
 <net name="A-DIGITAL-IN" class="0">
 <segment>
 <pinref part="R9" gate="G$1" pin="2"/>
-<wire x1="129.54" y1="210.82" x2="134.62" y2="210.82" width="0.1524" layer="91"/>
-<label x="129.54" y="210.82" size="1.778" layer="95"/>
+<wire x1="111.76" y1="180.34" x2="132.08" y2="180.34" width="0.1524" layer="91"/>
+<label x="114.3" y="177.8" size="1.778" layer="95"/>
 </segment>
 <segment>
 <wire x1="45.72" y1="93.98" x2="43.18" y2="93.98" width="0.1524" layer="91"/>
@@ -9669,8 +9660,8 @@ Source: 008-0260-0_E.pdf</description>
 <net name="B-DIGITAL-IN" class="0">
 <segment>
 <pinref part="R8" gate="G$1" pin="2"/>
-<wire x1="119.38" y1="208.28" x2="134.62" y2="208.28" width="0.1524" layer="91"/>
-<label x="129.54" y="205.74" size="1.778" layer="95"/>
+<wire x1="132.08" y1="182.88" x2="154.94" y2="182.88" width="0.1524" layer="91"/>
+<label x="134.62" y="182.88" size="1.778" layer="95"/>
 </segment>
 <segment>
 <pinref part="JP3" gate="G$1" pin="1"/>
@@ -9855,6 +9846,32 @@ Source: 008-0260-0_E.pdf</description>
 <pinref part="U2" gate="G$1" pin="PC5(ADC5/SCL)"/>
 <wire x1="96.52" y1="198.12" x2="114.3" y2="198.12" width="0.1524" layer="91"/>
 <pinref part="I2C" gate="G$1" pin="2"/>
+</segment>
+</net>
+<net name="N$7" class="0">
+<segment>
+<pinref part="U2" gate="G$1" pin="PD3(INT1)"/>
+<pinref part="R9" gate="G$1" pin="1"/>
+<wire x1="101.6" y1="180.34" x2="96.52" y2="180.34" width="0.1524" layer="91"/>
+</segment>
+</net>
+<net name="N$14" class="0">
+<segment>
+<pinref part="R16" gate="G$1" pin="1"/>
+<pinref part="R15" gate="G$1" pin="2"/>
+<wire x1="106.68" y1="182.88" x2="111.76" y2="182.88" width="0.1524" layer="91"/>
+</segment>
+</net>
+<net name="N$6" class="0">
+<segment>
+<pinref part="U2" gate="G$1" pin="PD2(INT0)"/>
+<pinref part="R15" gate="G$1" pin="1"/>
+</segment>
+</net>
+<net name="N$15" class="0">
+<segment>
+<pinref part="R8" gate="G$1" pin="1"/>
+<pinref part="R16" gate="G$1" pin="2"/>
 </segment>
 </net>
 </nets>
