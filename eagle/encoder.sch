@@ -10780,12 +10780,12 @@ Source: www.kingbright.com</description>
 <part name="P+4" library="supply1" deviceset="+5V" device=""/>
 <part name="GND3" library="supply1" deviceset="GND" device=""/>
 <part name="GND4" library="supply1" deviceset="GND" device=""/>
-<part name="JP1" library="SparkFun-Connectors" deviceset="M06" device="SIP"/>
+<part name="JP1" library="SparkFun-Connectors" deviceset="M06" device="SIP" value="Sensor"/>
 <part name="P+5" library="supply1" deviceset="+5V" device=""/>
 <part name="GND5" library="supply1" deviceset="GND" device=""/>
 <part name="P+6" library="supply1" deviceset="+5V" device=""/>
 <part name="P+7" library="supply1" deviceset="+5V" device=""/>
-<part name="JP3" library="SparkFun-Connectors" deviceset="M05" device="NO_SILK"/>
+<part name="JP3" library="SparkFun-Connectors" deviceset="M05" device="NO_SILK" value="Enc Out"/>
 <part name="GND7" library="supply1" deviceset="GND" device=""/>
 <part name="P+8" library="supply1" deviceset="+5V" device=""/>
 <part name="R5" library="resistor" deviceset="R-US_" device="R1206" value="0"/>
@@ -11056,6 +11056,7 @@ Source: www.kingbright.com</description>
 <wire x1="119.38" y1="132.08" x2="119.38" y2="142.24" width="0.1524" layer="91"/>
 <wire x1="114.3" y1="132.08" x2="119.38" y2="132.08" width="0.1524" layer="91"/>
 <pinref part="GND11" gate="1" pin="GND"/>
+<junction x="119.38" y="132.08"/>
 </segment>
 <segment>
 <pinref part="POWER" gate="G$1" pin="2"/>
