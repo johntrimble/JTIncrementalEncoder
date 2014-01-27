@@ -10761,7 +10761,8 @@ Source: www.kingbright.com</description>
 <variantdefs>
 </variantdefs>
 <classes>
-<class number="0" name="default" width="0" drill="0">
+<class number="0" name="default" width="0.254" drill="0">
+<clearance class="0" value="0.2032"/>
 </class>
 </classes>
 <parts>
@@ -10889,7 +10890,7 @@ Source: www.kingbright.com</description>
 <instance part="R16" gate="G$1" x="116.84" y="182.88"/>
 <instance part="LED1" gate="G$1" x="109.22" y="170.18" rot="R90"/>
 <instance part="R17" gate="G$1" x="101.6" y="170.18" rot="R180"/>
-<instance part="GND13" gate="1" x="116.84" y="170.18" rot="R90"/>
+<instance part="GND13" gate="1" x="124.46" y="170.18" rot="R90"/>
 </instances>
 <busses>
 </busses>
@@ -11064,6 +11065,7 @@ Source: www.kingbright.com</description>
 <segment>
 <pinref part="LED1" gate="G$1" pin="C"/>
 <pinref part="GND13" gate="1" pin="GND"/>
+<wire x1="121.92" y1="170.18" x2="114.3" y2="170.18" width="0.1524" layer="91"/>
 </segment>
 </net>
 <net name="B-REF" class="0">
