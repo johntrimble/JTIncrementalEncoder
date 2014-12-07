@@ -15,11 +15,11 @@
 <layer number="19" name="Unrouted" color="6" fill="1" visible="yes" active="yes"/>
 <layer number="20" name="Dimension" color="15" fill="1" visible="yes" active="yes"/>
 <layer number="21" name="tPlace" color="7" fill="1" visible="yes" active="yes"/>
-<layer number="22" name="bPlace" color="7" fill="1" visible="yes" active="yes"/>
+<layer number="22" name="bPlace" color="7" fill="1" visible="no" active="yes"/>
 <layer number="23" name="tOrigins" color="15" fill="1" visible="yes" active="yes"/>
 <layer number="24" name="bOrigins" color="15" fill="1" visible="yes" active="yes"/>
 <layer number="25" name="tNames" color="7" fill="1" visible="yes" active="yes"/>
-<layer number="26" name="bNames" color="7" fill="1" visible="yes" active="yes"/>
+<layer number="26" name="bNames" color="7" fill="1" visible="no" active="yes"/>
 <layer number="27" name="tValues" color="7" fill="1" visible="yes" active="yes"/>
 <layer number="28" name="bValues" color="7" fill="1" visible="yes" active="yes"/>
 <layer number="29" name="tStop" color="7" fill="3" visible="no" active="yes"/>
@@ -105,10 +105,10 @@
 </layers>
 <board>
 <plain>
-<wire x1="0" y1="0" x2="100" y2="0" width="0" layer="20"/>
-<wire x1="100" y1="0" x2="100" y2="80" width="0" layer="20"/>
-<wire x1="100" y1="80" x2="0" y2="80" width="0" layer="20"/>
-<wire x1="0" y1="80" x2="0" y2="0" width="0" layer="20"/>
+<wire x1="31.4663" y1="33.674853125" x2="96.785703125" y2="33.67485" width="0" layer="20"/>
+<wire x1="96.785703125" y1="33.67485" x2="96.785703125" y2="67.98535625" width="0" layer="20"/>
+<wire x1="96.785703125" y1="67.98535625" x2="31.466303125" y2="67.985353125" width="0" layer="20"/>
+<wire x1="31.466303125" y1="67.985353125" x2="31.4663" y2="33.674853125" width="0" layer="20"/>
 <rectangle x1="72.45" y1="44.85" x2="73.05" y2="45.5" layer="1"/>
 <rectangle x1="74.9885625" y1="44.8548125" x2="75.5885625" y2="45.5048125" layer="1"/>
 <rectangle x1="73.719659375" y1="44.855909375" x2="74.319659375" y2="45.505909375" layer="1"/>
@@ -1854,39 +1854,104 @@ design rules under a new name.</description>
 <element name="R1" library="resistor" package="R1206" value="100k" x="75.263440625" y="43.17635625"/>
 <element name="R2" library="resistor" package="R1206" value="100k" x="75.29" y="55.55"/>
 <element name="R3" library="resistor" package="R1206" value="10k" x="70.11681875" y="43.176359375"/>
-<element name="R4" library="resistor" package="R1206" value="10k" x="69.51" y="55.55"/>
-<element name="JP1" library="SparkFun-Connectors" package="1X06" value="Sensor" x="79.7228875" y="58.1605125"/>
-<element name="JP3" library="SparkFun-Connectors" package="1X05_NO_SILK" value="Enc Out" x="64.1" y="54.3" rot="R270"/>
-<element name="R5" library="resistor" package="R1206" value="0" x="69.5" y="53.05"/>
-<element name="R6" library="resistor" package="R1206" value="0" x="68.1" y="57.7" rot="R180"/>
-<element name="R7" library="resistor" package="R1206" value="0" x="68.15" y="59.85" rot="R180"/>
-<element name="U2" library="SparkFun-DigitalIC" package="TQFP32-08" value="ATMEGA328P" x="51.6" y="50.25">
-<attribute name="PROD_ID" value="IC-09069" x="51.6" y="50.25" size="1.778" layer="27" display="off"/>
+<element name="R4" library="resistor" package="R1206" value="10k" x="69.51" y="55.55" smashed="yes">
+<attribute name="NAME" x="68.113" y="56.693" size="1.27" layer="25"/>
+<attribute name="VALUE" x="64.907540625" y="54.962365625" size="1.27" layer="27"/>
 </element>
-<element name="R8" library="resistor" package="R1206" value="0" x="60.3" y="53.6"/>
-<element name="R9" library="resistor" package="R1206" value="0" x="60.3" y="50.15"/>
-<element name="R10" library="resistor" package="R1206" value="0" x="53.48570625" y="43.375321875" rot="R180"/>
-<element name="J1" library="SparkFun-Connectors" package="2X3-NS" value="SPI" x="45" y="38.65" rot="R180"/>
+<element name="JP1" library="SparkFun-Connectors" package="1X06" value="Sensor" x="79.7228875" y="58.1605125"/>
+<element name="JP3" library="SparkFun-Connectors" package="1X05_NO_SILK" value="Enc Out" x="64.1" y="54.3" smashed="yes" rot="R270">
+<attribute name="NAME" x="65.9288" y="55.6462" size="1.27" layer="25" ratio="10" rot="R270"/>
+<attribute name="VALUE" x="65.453809375" y="50.653290625" size="1.27" layer="27" rot="R270"/>
+</element>
+<element name="R5" library="resistor" package="R1206" value="0" x="69.5" y="53.05" smashed="yes">
+<attribute name="NAME" x="68.103" y="54.193" size="1.27" layer="25"/>
+<attribute name="VALUE" x="66.544384375" y="52.432921875" size="1.27" layer="27"/>
+</element>
+<element name="R6" library="resistor" package="R1206" value="0" x="68.1" y="57.7" smashed="yes" rot="R180">
+<attribute name="NAME" x="69.497" y="56.557" size="1.27" layer="25" rot="R180"/>
+<attribute name="VALUE" x="65.93865" y="58.169871875" size="1.27" layer="27" rot="R180"/>
+</element>
+<element name="R7" library="resistor" package="R1206" value="0" x="68.15" y="59.85" smashed="yes" rot="R180">
+<attribute name="NAME" x="69.547" y="58.707" size="1.27" layer="25" rot="R180"/>
+<attribute name="VALUE" x="65.841609375" y="60.0843375" size="1.27" layer="27" rot="R180"/>
+</element>
+<element name="U2" library="SparkFun-DigitalIC" package="TQFP32-08" value="ATMEGA328P" x="51.6" y="50.25" smashed="yes">
+<attribute name="PROD_ID" value="IC-09069" x="51.6" y="50.25" size="1.778" layer="27" display="off"/>
+<attribute name="NAME" x="48.425" y="55.33" size="0.4064" layer="25"/>
+<attribute name="VALUE" x="49.912828125" y="47.933465625" size="0.4064" layer="27"/>
+</element>
+<element name="R8" library="resistor" package="R1206" value="0" x="60.3" y="53.6" smashed="yes">
+<attribute name="NAME" x="58.903" y="54.743" size="1.27" layer="25"/>
+<attribute name="VALUE" x="57.5502375" y="52.95348125" size="1.27" layer="27"/>
+</element>
+<element name="R9" library="resistor" package="R1206" value="0" x="60.3" y="50.15" smashed="yes">
+<attribute name="NAME" x="58.903" y="51.293" size="1.27" layer="25"/>
+<attribute name="VALUE" x="57.57964375" y="49.47404375" size="1.27" layer="27"/>
+</element>
+<element name="R10" library="resistor" package="R1206" value="0" x="53.48570625" y="43.375321875" smashed="yes" rot="R180">
+<attribute name="NAME" x="54.88270625" y="42.232321875" size="1.27" layer="25" rot="R180"/>
+<attribute name="VALUE" x="54.706259375" y="42.2848" size="1.27" layer="27" rot="R180"/>
+</element>
+<element name="J1" library="SparkFun-Connectors" package="2X3-NS" value="SPI" x="45" y="38.65" smashed="yes" rot="R180">
+<attribute name="NAME" x="48.81" y="35.475" size="1.27" layer="25" ratio="10" rot="R180"/>
+<attribute name="VALUE" x="45.3986875" y="35.23415625" size="1.27" layer="27" rot="R180"/>
+</element>
 <element name="R11" library="resistor" package="R1206" value="0" x="86.481803125" y="41.326584375" rot="R180"/>
-<element name="R12" library="resistor" package="R1206" value="0" x="93.2" y="46.45" rot="R270"/>
-<element name="R13" library="resistor" package="R1206" value="0" x="59.7" y="45.95" rot="R90"/>
+<element name="R12" library="resistor" package="R1206" value="0" x="93.2" y="46.45" smashed="yes" rot="R270">
+<attribute name="NAME" x="94.343" y="47.847" size="1.27" layer="25" rot="R270"/>
+<attribute name="VALUE" x="94.40416875" y="46.963759375" size="1.27" layer="27" rot="R270"/>
+</element>
+<element name="R13" library="resistor" package="R1206" value="0" x="59.7" y="45.95" smashed="yes" rot="R90">
+<attribute name="NAME" x="58.557" y="44.553" size="1.27" layer="25" rot="R90"/>
+<attribute name="VALUE" x="58.466425" y="45.55400625" size="1.27" layer="27" rot="R90"/>
+</element>
 <element name="Q2" library="crystal" package="HC49UP" value="" x="41.95" y="49.3" rot="R90">
 <attribute name="OC_NEWARK" value="unknown" x="41.95" y="49.3" size="1.778" layer="27" rot="R90" display="off"/>
 <attribute name="MPN" value="" x="41.95" y="49.3" size="1.778" layer="27" rot="R90" display="off"/>
 <attribute name="MF" value="" x="41.95" y="49.3" size="1.778" layer="27" rot="R90" display="off"/>
 <attribute name="OC_FARNELL" value="unknown" x="41.95" y="49.3" size="1.778" layer="27" rot="R90" display="off"/>
 </element>
-<element name="C1" library="resistor" package="C1206" value="22pf" x="37.6" y="42.95" rot="R270"/>
-<element name="C2" library="resistor" package="C1206" value="22pf" x="37.55" y="55.125965625" rot="R90"/>
-<element name="R14" library="resistor" package="R1206" value="10k" x="44.15" y="60.1" rot="R270"/>
-<element name="C3" library="resistor" package="C1206" value="10uf" x="36.55" y="60.17403125" rot="R90"/>
-<element name="JP2" library="SparkFun-Connectors" package="1X06" value="Serial" x="36.55" y="64.05"/>
-<element name="I2C" library="SparkFun-Connectors" package="1X02" value="M02PTH" x="54.7" y="58.75" rot="R180"/>
-<element name="POWER" library="SparkFun-Connectors" package="1X02" value="M02PTH" x="55.85" y="64.037015625" rot="R179.7"/>
-<element name="R15" library="resistor" package="R1206" value="0" x="48.2123375" y="60.06298125" rot="R90"/>
-<element name="R16" library="resistor" package="R1206" value="0" x="58.8" y="57.95" rot="R270"/>
+<element name="C1" library="resistor" package="C1206" value="22pf" x="37.6" y="42.95" smashed="yes" rot="R270">
+<attribute name="NAME" x="38.743" y="44.22" size="1.27" layer="25" rot="R270"/>
+<attribute name="VALUE" x="34.981146875" y="44.7793875" size="1.27" layer="27" rot="R270"/>
+</element>
+<element name="C2" library="resistor" package="C1206" value="22pf" x="37.55" y="55.125965625" smashed="yes" rot="R90">
+<attribute name="NAME" x="36.407" y="53.855965625" size="1.27" layer="25" rot="R90"/>
+<attribute name="VALUE" x="36.051753125" y="53.649878125" size="1.27" layer="27" rot="R90"/>
+</element>
+<element name="R14" library="resistor" package="R1206" value="10k" x="44.15" y="60.1" smashed="yes" rot="R270">
+<attribute name="NAME" x="45.293" y="61.497" size="1.27" layer="25" rot="R270"/>
+<attribute name="VALUE" x="41.648775" y="61.320353125" size="1.27" layer="27" rot="R270"/>
+</element>
+<element name="C3" library="resistor" package="C1206" value="10uf" x="36.55" y="60.17403125" smashed="yes" rot="R90">
+<attribute name="NAME" x="35.407" y="58.90403125" size="1.27" layer="25" rot="R90"/>
+<attribute name="VALUE" x="38.933590625" y="58.197440625" size="1.27" layer="27" rot="R90"/>
+</element>
+<element name="JP2" library="SparkFun-Connectors" package="1X06" value="Serial" x="36.55" y="64.05" smashed="yes">
+<attribute name="NAME" x="35.2038" y="65.8788" size="1.27" layer="25" ratio="10"/>
+<attribute name="VALUE" x="34.83888125" y="66.17444375" size="1.27" layer="27"/>
+</element>
+<element name="I2C" library="SparkFun-Connectors" package="1X02" value="M02PTH" x="54.7" y="58.75" smashed="yes" rot="R180">
+<attribute name="NAME" x="56.0462" y="56.9212" size="1.27" layer="25" ratio="10" rot="R180"/>
+<attribute name="VALUE" x="56.911053125" y="61.483378125" size="1.27" layer="27" rot="R180"/>
+</element>
+<element name="POWER" library="SparkFun-Connectors" package="1X02" value="M02PTH" x="55.85" y="64.037015625" smashed="yes" rot="R179.7">
+<attribute name="NAME" x="57.186603125" y="62.201190625" size="1.27" layer="25" ratio="10" rot="R179.7"/>
+<attribute name="VALUE" x="57.195421875" y="66.734259375" size="1.27" layer="27" rot="R179.7"/>
+</element>
+<element name="R15" library="resistor" package="R1206" value="0" x="48.2123375" y="60.06298125" smashed="yes" rot="R90">
+<attribute name="NAME" x="47.0693375" y="58.66598125" size="1.27" layer="25" rot="R90"/>
+<attribute name="VALUE" x="46.86113125" y="59.5786625" size="1.27" layer="27" rot="R90"/>
+</element>
+<element name="R16" library="resistor" package="R1206" value="0" x="58.8" y="57.95" smashed="yes" rot="R270">
+<attribute name="NAME" x="59.943" y="59.347" size="1.27" layer="25" rot="R270"/>
+<attribute name="VALUE" x="60.033575" y="57.933815625" size="1.27" layer="27" rot="R270"/>
+</element>
 <element name="LED1" library="led" package="1206" value="" x="52.09661875" y="38.3623375" rot="R270"/>
-<element name="R17" library="resistor" package="R1206" value="330" x="49.95" y="42.85" rot="R90"/>
+<element name="R17" library="resistor" package="R1206" value="330" x="49.95" y="42.85" smashed="yes" rot="R90">
+<attribute name="NAME" x="48.807" y="41.453" size="1.27" layer="25" rot="R90"/>
+<attribute name="VALUE" x="48.716421875" y="42.071271875" size="1.27" layer="27" rot="R90"/>
+</element>
 </elements>
 <signals>
 <signal name="GND">
