@@ -14,12 +14,12 @@ static const int SLAVE_ADDRESS = 31;
 // Channel A
 static const int CHANNEL_A_INPUT_PIN = 2;
 static const int CHANNEL_A_INTERRUPT = 0;
-static const int CHANNEL_A_RAW_INPUT_PIN = A0;
+static const int CHANNEL_A_RAW_INPUT_PIN = A3;
 
 // Channel B
 static const int CHANNEL_B_INPUT_PIN = 3;
 static const int CHANNEL_B_INTERRUPT = 1;
-static const int CHANNEL_B_RAW_INPUT_PIN = A1;
+static const int CHANNEL_B_RAW_INPUT_PIN = A2;
 
 // Interrupt vars
 static byte isrSteps = 0;

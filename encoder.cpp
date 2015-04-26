@@ -189,12 +189,12 @@ inline void Encoder<POT,STORAGE, LOG>::positionDidChange(
   
   // determine if direction changed
   if( currentDirection != previousDirection ) {
-    this->log.println("Direction changed");
+    //this->log.println("Direction changed");
   }
 
   // determine if a revolution has been completed.
   if( revolutionCompleted ) {
-    this->log.print("Index: "); this->log.println(revolutions);
+    //this->log.print("Index: "); this->log.println(revolutions);
     digitalWrite(INDEX_INDICATOR_PIN, LOW);
   } else {
     digitalWrite(INDEX_INDICATOR_PIN, HIGH);
@@ -269,6 +269,9 @@ static inline void stopCalibration(EncoderChannelPair& channelPair) {
   for( int i = 0; i < NUMBER_CHANNELS; i++ ) {
     //channels[i].average = total[i] / count;
     channels[i].average = (channels[i].minValue + channels[i].maxValue) / 2;
+    Serial.print("Channel "); Serial.print(i); Serial.print(" average: "); Serial.println(channels[i].average);
+    Serial.print("Channel "); Serial.print(i); Serial.print(" min: "); Serial.println(channels[i].minValue);
+    Serial.print("Channel "); Serial.print(i); Serial.print(" max: "); Serial.println(channels[i].maxValue);
   }
   attachInterrupt(channelPair.a.interrupt, channelPair.a.isrFunc, CHANGE);
   attachInterrupt(channelPair.b.interrupt, channelPair.b.isrFunc, CHANGE);
