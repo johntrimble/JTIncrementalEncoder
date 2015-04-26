@@ -11,6 +11,17 @@ static void stopCalibration(EncoderChannelPair& channelPair);
 static uint8_t getDirection(uint8_t encoderState);
 static uint8_t updatePosition(uint8_t previousState, uint8_t currentState, int &position);
 
+static inline void printState(uint8_t encoderState) {
+  for( uint8_t i = 0; i < 8; i++ ) {
+    if( (encoderState<<i)&0x80 ) {
+      Serial.print("0");
+    } else {
+      Serial.print("1");
+    }
+  }
+  Serial.println("");
+}
+
 template<typename POT>
 static inline void updateVoltageReference(JTIncrementalEncoder::EncoderChannel& channel, POT& pot) {
   pot.write(channel.channel, map(channel.average, 0, 1023, 0, 255));
@@ -137,11 +148,11 @@ void Encoder<POT,STORAGE, LOG>::update() {
     uint8_t currentState = this->state.encoderState;
     int positionTemp = this->state.position;
     if( previousState != currentState ) {
+      //printState(currentState);
       uint8_t currentDirection = this->getDirection(currentState);
       uint8_t revolutionCompleted = updatePosition(previousState, currentState, positionTemp);
       if( revolutionCompleted )
         this->revolutions++;
-      
       this->positionDidChange(revolutionCompleted, revolutions, previousDirection, state.position, currentDirection, positionTemp);
 
       previousState = currentState;
@@ -194,7 +205,7 @@ inline void Encoder<POT,STORAGE, LOG>::positionDidChange(
 
   // determine if a revolution has been completed.
   if( revolutionCompleted ) {
-    //this->log.print("Index: "); this->log.println(revolutions);
+    this->log.print("Index: "); this->log.println(revolutions);
     digitalWrite(INDEX_INDICATOR_PIN, LOW);
   } else {
     digitalWrite(INDEX_INDICATOR_PIN, HIGH);
