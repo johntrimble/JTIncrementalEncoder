@@ -53,12 +53,10 @@ EncoderInterface<TwoWire, Encoder<MCP42xxx,EEPROMClass,Print> > i2cSlave(Wire, e
  */
 static void channelAISR() {
   updateChannelAEncoderState(encoder.state.channels.a, encoder.state.encoderState, isrSteps);
-  a_fired = 1;
 }
 
 static void channelBISR() {
   updateChannelBEncoderState(encoder.state.channels.b, encoder.state.encoderState, isrSteps);
-  b_fired = 1;
 }
 
 void setup() {
@@ -71,16 +69,6 @@ void setup() {
 void loop() {
   static uint8_t calibratedStatus = i2cSlave.getCalibratedStatus();
   i2cSlave.update();
-  
-  if( a_fired ) {
-    Serial.println("A");
-    a_fired = 0;
-  }
-  
-  if( b_fired ) {
-    Serial.println("B"); 
-    b_fired = 0;
-  }
   
   static uint8_t newCalibratedStatus = i2cSlave.getCalibratedStatus();
   if( newCalibratedStatus && newCalibratedStatus != calibratedStatus ) {

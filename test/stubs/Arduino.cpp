@@ -83,4 +83,9 @@ int map(int value, int sourceStart, int sourceEnd, int destStart, int destEnd) {
   return (value * ((float)(destEnd-destStart) / (float)(sourceEnd-sourceStart))) + destStart;
 }
 
+static unsigned long currentMicros = 0;
+unsigned long micros() {
+  return currentMicros;
+}
+
 HardwareSerial Serial;

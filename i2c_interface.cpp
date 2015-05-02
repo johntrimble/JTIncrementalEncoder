@@ -88,7 +88,7 @@ void EncoderInterface<WIRE,ENCODER>::update() {
   if( !calibrating && newCalibratingValue ) {
     this->encoder.startCalibration();
   } else if( calibrating && !newCalibratingValue ) {
-    this->encoder.stopCalibration();
+    //this->encoder.stopCalibration();
   }
   calibrating = newCalibratingValue;
 
