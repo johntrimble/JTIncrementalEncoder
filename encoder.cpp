@@ -13,10 +13,99 @@ static uint8_t getDirection(uint8_t encoderState);
 static uint8_t updatePosition(uint8_t previousState, uint8_t currentState, int &position);
 static uint8_t getCurrentChannelValue(uint8_t encoderState, uint8_t channelIndex);
 static uint8_t getPreviousChannelValue(uint8_t encoderState, uint8_t channelIndex);
-static inline void initSample(Sample& sample);
-static inline void initSamplingData(SamplingData& samplingData);
 static inline void initCalibration(Calibration& calibration);
 static inline void updateDutyCycleAverage(uint8_t encoderState, unsigned long currentTime);
+
+void initMovingAverage(MovingAverage& buffer) {
+  buffer.head = buffer.data;
+  buffer.data_end = buffer.data + MOVING_AVERAGE_DATA_SIZE;
+  buffer.average = 0;
+  buffer.ready = 0;
+  for( uint8_t* i = buffer.data; i != buffer.data_end; i++) {
+    *i = 0;
+  }
+}
+
+void addToMovingAverage(MovingAverage& buffer, uint8_t value) {
+  uint8_t oldEndValue = *(buffer.head);
+  *(buffer.head) = value;
+
+  // NOTE: subtraction first to prevent overflow!
+  buffer.average = (buffer.average - (oldEndValue >> 4)) + (value >> 4);
+  buffer.head++;
+  if( buffer.head == buffer.data_end ) {
+    buffer.head = buffer.data;
+    buffer.ready = 1;
+  }
+  // std::cout << "Adding " << (int)value << "\n";
+}
+
+uint8_t currentMovingAverage(MovingAverage& buffer) {
+  return buffer.average;
+}
+
+uint8_t isReadyMovingAverage(MovingAverage& buffer) {
+  return buffer.ready;
+}
+
+static inline unsigned long calcMicrosDelta(unsigned long currentTime, unsigned long startTime) {
+  unsigned long delta;
+  // determine how long this measurement has gone on
+  if( currentTime < startTime ) {
+    // the micros() value rolls over every 70 minutes, correct for that
+    delta = currentTime + (ULONG_MAX - startTime);
+  } else {
+    delta = currentTime - startTime;
+  }
+  return delta;
+}
+
+void initDutyCycleMovingAverage(
+  DutyCycleMovingAverage& dutyCycleMA,
+  unsigned long currentTimeMicros) {
+
+  initMovingAverage(dutyCycleMA.movingAverage);
+  dutyCycleMA.sampleEndTime = currentTimeMicros + DUTY_CYCLE_MA_SAMPLE_LENGTH;
+  dutyCycleMA.lastCheckTime = currentTimeMicros;
+  dutyCycleMA.acc = 0;
+}
+
+static inline uint8_t isDutyCycleGreatherThan50Percent(DutyCycleMovingAverage& dutyCycleMA) {
+  return dutyCycleMA.movingAverage.average > 127;
+}
+
+void updateDutyCycleMA(
+  DutyCycleMovingAverage& dutyCycleMA, 
+  uint8_t channelValue, 
+  unsigned long currentTimeMicros) {
+  //std::cout << "updateDutyCycleMA( " << (int)channelValue << " " << currentTimeMicros << " )\n";
+  unsigned long delta = calcMicrosDelta(
+    currentTimeMicros, 
+    dutyCycleMA.lastCheckTime);
+
+  if( channelValue == HIGH )
+    dutyCycleMA.acc += delta;
+
+  if( currentTimeMicros > dutyCycleMA.sampleEndTime ) {
+    // trying to avoid multiplication and division here for performance 
+    // reasons, but the need branch statement might be negating any
+    // performance benefit...
+
+    // the max value of acc is 2^17 (our sample length). We want an 8 bit 
+    // number, so just take 8 most significant bits of our 17 bit number.
+    if( dutyCycleMA.acc >= DUTY_CYCLE_MA_SAMPLE_LENGTH ) {
+      dutyCycleMA.acc = DUTY_CYCLE_MA_SAMPLE_LENGTH-1;
+    }
+    uint8_t value = (dutyCycleMA.acc >> 9);
+    // uint8_t hardValue = (dutyCycleMA.acc/(double)DUTY_CYCLE_MA_SAMPLE_LENGTH)*255;
+    // std::cout << (long)dutyCycleMA.acc << " " << (int)value << " " << (int)hardValue << "\n";
+    //std::cout << "Preparing to add " << (int)value << " with acc " << dutyCycleMA.acc <<  "\n";
+    addToMovingAverage(dutyCycleMA.movingAverage, value);
+    dutyCycleMA.sampleEndTime = currentTimeMicros + DUTY_CYCLE_MA_SAMPLE_LENGTH;
+    dutyCycleMA.acc = 0;
+  }
+  dutyCycleMA.lastCheckTime = currentTimeMicros;
+}
 
 static inline uint8_t getCurrentChannelValue(uint8_t encoderState, uint8_t channelIndex) {
   return (encoderState >> (5 - channelIndex)) & 0x1;
@@ -117,7 +206,6 @@ Encoder<POT,STORAGE, LOG>::Encoder(
 
   // make this for debugging only
   pinMode(INDEX_INDICATOR_PIN, OUTPUT);
-  initCalibration(this->calibration);
 }
 
 template <typename POT, typename STORAGE, typename LOG>
@@ -143,15 +231,13 @@ void Encoder<POT,STORAGE, LOG>::resetPosition() {
 template <typename POT, typename STORAGE, typename LOG>
 void Encoder<POT,STORAGE, LOG>::startCalibration() { 
   this->calibrating = 1;
-  initCalibration(this->calibration);
+  initCalibration(this->calibration, micros());
   this->pot.write(this->state.channels.a.channel, calibration.a.potSetting);
   this->pot.write(this->state.channels.b.channel, calibration.b.potSetting);
 }
 
 template <typename POT, typename STORAGE, typename LOG>
-void Encoder<POT,STORAGE, LOG>::stopCalibration() { 
-  JTIncrementalEncoder::stopCalibration(this->state.channels);
-  this->updateVoltageReference();
+void Encoder<POT,STORAGE, LOG>::stopCalibration() {
   this->calibrating = 0;
 }
 
@@ -175,12 +261,16 @@ void Encoder<POT,STORAGE, LOG>::update() {
       currentTime);
     if( isCalibrationFinished(calibration) ) {
       this->calibrating = 0;
+      this->log.println("Calibration finished");
+      this->log.print("Pot setting A: ");
+      this->log.println((int)this->calibration.a.potSetting);
+      this->log.print("Pot setting B: ");
+      this->log.println((int)this->calibration.b.potSetting);
     }
   } else {
     uint8_t currentState = this->state.encoderState;
     int positionTemp = this->state.position;
     if( previousState != currentState ) {
-      //printState(currentState);
       uint8_t currentDirection = this->getDirection(currentState);
       uint8_t revolutionCompleted = updatePosition(previousState, currentState, positionTemp);
       if( revolutionCompleted )
@@ -244,18 +334,6 @@ inline void Encoder<POT,STORAGE, LOG>::positionDidChange(
   }
 }
 
-void isort(int arr[], int length) {
-  for( int i = 1; i < length; i++ ) {
-    int value = arr[i];
-    int k = i;
-    while( k > 0 && value < arr[k-1] ) {
-       arr[k] = arr[k-1];
-       k--;      
-    }
-    arr[k] = value;
-  }
-}
-
 /**
  * Given the encoder state, returns the current direction.
  */
@@ -273,79 +351,6 @@ static uint8_t getDirection(uint8_t encoderState) {
   }
 } 
 
-/**
- * Reads from the given analog pin multiple times and returns the mean.
- */
-uint8_t sample(uint8_t pin) {
-  int readings[5];
-  for( int i = 0; i < 5; i++ ) {
-    readings[i] = analogRead(pin);
-  }
-  isort(readings, 5);
-  return readings[2];
-}
-
-static inline unsigned long calcMicrosDelta(unsigned long currentTime, unsigned long startTime) {
-  unsigned long delta;
-  // determine how long this measurement has gone on
-  if( currentTime < startTime ) {
-    // the micros() value rolls over every 70 minutes, correct for that
-    delta = currentTime + (ULONG_MAX - startTime);
-  } else {
-    delta = currentTime - startTime;
-  }
-  return delta;
-}
-
-static inline void updateSampling(
-  SamplingData& samplingData, 
-  uint8_t pinState,
-  unsigned long currentTime, 
-  SamplingResult& result) {
-
-  Sample *currentSample = &(samplingData.samples[samplingData.samplesIndex]);
-  unsigned long delta = calcMicrosDelta(currentTime, currentSample->startTime);
-  result.highTime = result.lowTime = 0;
-
-  if( pinState != currentSample->type ) {
-    currentSample->finished = 1;
-  }
-
-  if( delta > SAMPLE_TIMEOUT && !currentSample->finished ) {
-    // the signal isn't varying
-    if( currentSample->type == HIGH ) {
-      result.highTime = delta * SAMPLE_COUNT;
-      result.lowTime = 0;
-    } else {
-      result.highTime = 0;
-      result.lowTime = delta * SAMPLE_COUNT;
-    }
-  } else if( currentSample->finished ) {
-    // we are done measuring, record sample
-    currentSample->duration = delta;
-    
-    if( samplingData.samplesIndex + 1 < SAMPLE_COUNT ) {
-      Sample* nextSample = &(samplingData.samples[samplingData.samplesIndex]);
-      nextSample->startTime = currentTime;
-      nextSample->type = pinState;
-      samplingData.samplesIndex++;
-    } else {
-      for( int i = 0; i < SAMPLE_COUNT; i++ ) {
-        Sample* sample = &(samplingData.samples[i]);
-        if( sample->type == HIGH ) {
-          result.highTime += sample->duration / SAMPLE_COUNT;
-        } else {
-          result.lowTime += sample->duration / SAMPLE_COUNT;
-        }
-      }
-    }
-  }
-}
-
-static inline uint8_t isSamplingFinished(SamplingResult& result) {
-  return result.highTime || result.lowTime;
-}
-
 static inline uint8_t isChannelCalibrationFinished(ChannelCalibration& calibration) {
   return calibration.finished;
 }
@@ -354,51 +359,36 @@ static inline uint8_t isCalibrationFinished(Calibration& calibration) {
   return calibration.a.finished && calibration.b.finished;
 }
 
-static inline void initChannelCalibration(ChannelCalibration& channelCalibration) {
+static inline void initChannelCalibration(ChannelCalibration& channelCalibration, unsigned long currentTimeMicros) {
   channelCalibration.mask = 0x80;
   channelCalibration.potSetting = 0x80;
   channelCalibration.finished = 0;
-  initSamplingData(channelCalibration.samplingData);
+  channelCalibration.lastUpdateTime = currentTimeMicros;
+  initDutyCycleMovingAverage(channelCalibration.dutyCycleMA, currentTimeMicros);
 }
 
-static inline void initCalibration(Calibration& calibration) {
-  initChannelCalibration(calibration.a);
-  initChannelCalibration(calibration.b);
-}
-
-static inline void initSample(Sample& sample) {
-  sample.type = HIGH;
-  sample.duration = 0;
-  sample.startTime = 0;
-  sample.finished = 0;
-}
-
-static inline void initSamplingData(SamplingData& samplingData) {
-  // reset the samples
-  for(int i = 0; i < SAMPLE_COUNT; i++) {
-    initSample(samplingData.samples[i]);
-  }
-  samplingData.type = 0;
-  samplingData.samplesIndex = 0;
+static inline void initCalibration(Calibration& calibration, unsigned long currentTimeMicros) {
+  initChannelCalibration(calibration.a, currentTimeMicros);
+  initChannelCalibration(calibration.b, currentTimeMicros);
 }
 
 static inline void updateChannelCalibration(ChannelCalibration& calibration, uint8_t currentChannelValue, unsigned long currentTime) {
   if( ! calibration.finished ) {
-    SamplingResult samplingResult;
+    updateDutyCycleMA(calibration.dutyCycleMA, currentChannelValue, currentTime);
 
-    // TODO: stop interrupts from using data while we are fiddling
-    updateSampling(calibration.samplingData, currentChannelValue, currentTime, samplingResult);
-
-    if( isSamplingFinished(samplingResult) ) {
-      // determine if the current bit for the the potSetting should be off
-      if( samplingResult.highTime > samplingResult.lowTime ) {
+    unsigned long delta = calcMicrosDelta(currentTime, calibration.lastUpdateTime);
+    
+    if( delta > CALIBRATION_INTERVAL_LENGTH ) {  
+      // NOTE: Higher POT settings give lower resistance
+      if( isDutyCycleGreatherThan50Percent(calibration.dutyCycleMA) ) {
         // the reference voltage is too low causing us to stay in a HIGH state
-        // too long. Leave this bit set as it offers the higher reference 
-        // voltage.
-        //calibration.potSetting = calibration.potSetting | calibration.mask;
+        // too long. We raise the voltage by decreasing resistance, which we
+        // achieve by increasing the POT setting. So leave this bit set.
+
       } else {
         // the reference voltage is too high causing us to stay in a LOW state
-        // too long. Decrease the POT setting to decrease the reference voltage.
+        // too long. We lower the voltage by increasing resistance, which we
+        // achieve by decreasing the POT setting. So unset this bit.
         calibration.potSetting = calibration.potSetting ^ calibration.mask;
       }
 
@@ -409,9 +399,10 @@ static inline void updateChannelCalibration(ChannelCalibration& calibration, uin
         // set next bit of potSetting
         calibration.mask = calibration.mask >> 1;
         calibration.potSetting = calibration.potSetting | calibration.mask;
-        // reset sampling data for next iteration
-        initSamplingData(calibration.samplingData);
       }
+
+      // reset the last update time as we are beginning a new interval
+      calibration.lastUpdateTime = currentTime;
     }
   }
 }
@@ -426,7 +417,14 @@ static inline void updateDutyCycleMovingAverage(
 }
 
 template<typename POT>
-static inline void updateCalibration(MCP42xxx::Channel& channelA, MCP42xxx::Channel& channelB, POT& pot, Calibration& calibration, uint8_t encoderState, unsigned long currentTime) {
+static inline void updateCalibration(
+  MCP42xxx::Channel& channelA, 
+  MCP42xxx::Channel& channelB, 
+  POT& pot, 
+  Calibration& calibration, 
+  uint8_t encoderState, 
+  unsigned long currentTime) {
+
   uint8_t channelAValue = getCurrentChannelValue(encoderState, 0);
   uint8_t channelBValue = getCurrentChannelValue(encoderState, 1);
   uint8_t oldChannelAPotSetting = calibration.a.potSetting;
