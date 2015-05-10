@@ -88,4 +88,8 @@ unsigned long micros() {
   return currentMicros;
 }
 
+void delay(unsigned long) {
+  
+}
+
 HardwareSerial Serial;

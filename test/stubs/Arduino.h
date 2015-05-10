@@ -76,6 +76,8 @@ int map(int value, int sourceStart, int sourceEnd, int destStart, int destEnd);
 
 unsigned long micros();
 
+void delay(unsigned long);
+
 class Print {
 public:
   inline size_t print(const char[]) { return 0; }

@@ -15,6 +15,15 @@ static uint8_t getCurrentChannelValue(uint8_t encoderState, uint8_t channelIndex
 static uint8_t getPreviousChannelValue(uint8_t encoderState, uint8_t channelIndex);
 static inline void initCalibration(Calibration& calibration);
 static inline void updateDutyCycleAverage(uint8_t encoderState, unsigned long currentTime);
+static inline uint8_t isCalibrationFinished(Calibration& calibration);
+template<typename POT>
+static inline void updateCalibration(
+  MCP42xxx::Channel& channelA, 
+  MCP42xxx::Channel& channelB, 
+  POT& pot, 
+  Calibration& calibration, 
+  uint8_t encoderState, 
+  unsigned long currentTime);
 
 void initMovingAverage(MovingAverage& buffer) {
   buffer.head = buffer.data;
@@ -100,6 +109,7 @@ void updateDutyCycleMA(
     // uint8_t hardValue = (dutyCycleMA.acc/(double)DUTY_CYCLE_MA_SAMPLE_LENGTH)*255;
     // std::cout << (long)dutyCycleMA.acc << " " << (int)value << " " << (int)hardValue << "\n";
     //std::cout << "Preparing to add " << (int)value << " with acc " << dutyCycleMA.acc <<  "\n";
+    //Serial.print("Adding value "); Serial.println((int)value);
     addToMovingAverage(dutyCycleMA.movingAverage, value);
     dutyCycleMA.sampleEndTime = currentTimeMicros + DUTY_CYCLE_MA_SAMPLE_LENGTH;
     dutyCycleMA.acc = 0;
@@ -118,12 +128,12 @@ static inline uint8_t getPreviousChannelValue(uint8_t encoderState, uint8_t chan
 static inline void printState(uint8_t encoderState) {
   for( uint8_t i = 0; i < 8; i++ ) {
     if( (encoderState<<i)&0x80 ) {
-      Serial.print("0");
-    } else {
       Serial.print("1");
+    } else {
+      Serial.print("0");
     }
   }
-  Serial.println("");
+//  Serial.println("");
 }
 
 template<typename POT>
@@ -206,6 +216,9 @@ Encoder<POT,STORAGE, LOG>::Encoder(
 
   // make this for debugging only
   pinMode(INDEX_INDICATOR_PIN, OUTPUT);
+
+  attachInterrupt(this->state.channels.a.interrupt, this->state.channels.a.isrFunc, CHANGE);
+  attachInterrupt(this->state.channels.b.interrupt, this->state.channels.b.isrFunc, CHANGE);
 }
 
 template <typename POT, typename STORAGE, typename LOG>
@@ -230,27 +243,37 @@ void Encoder<POT,STORAGE, LOG>::resetPosition() {
 
 template <typename POT, typename STORAGE, typename LOG>
 void Encoder<POT,STORAGE, LOG>::startCalibration() { 
-  this->calibrating = 1;
-  initCalibration(this->calibration, micros());
-  this->pot.write(this->state.channels.a.channel, calibration.a.potSetting);
-  this->pot.write(this->state.channels.b.channel, calibration.b.potSetting);
+  if( !this->calibrating ) {
+    this->calibrating = 1;
+    this->pot.write(this->state.channels.a.channel, 0x80);
+    this->pot.write(this->state.channels.b.channel, 0x80);
+    delay(200); // TODO: this delay might not be needed
+    // Ensure the encoder state gets set at least once by the interrupts
+    this->state.channels.a.isrFunc();
+    this->state.channels.b.isrFunc();
+    initCalibration(this->calibration, micros());  
+  }
 }
 
 template <typename POT, typename STORAGE, typename LOG>
 void Encoder<POT,STORAGE, LOG>::stopCalibration() {
-  this->calibrating = 0;
+  //this->calibrating = 0;
 }
 
 template <typename POT, typename STORAGE, typename LOG>
 void Encoder<POT,STORAGE, LOG>::update() { 
   static uint8_t previousState = 0;
   static uint8_t previousDirection = CLOCKWISE;
-
+  uint8_t currentState = this->state.encoderState;
+  if( previousState != currentState ) {
+    //printState(currentState);
+  }
+  
   if( this->calibrating ) {
     // for the sake of testing, we get the micros here and pass it as an 
     // argument
     unsigned long currentTime = micros();
-    updateDutyCycleAverage(this->state.encoderState, currentTime);
+    // updateDutyCycleAverage(this->state.encoderState, currentTime);
 
     JTIncrementalEncoder::updateCalibration(
       this->state.channels.a.channel,
@@ -268,7 +291,7 @@ void Encoder<POT,STORAGE, LOG>::update() {
       this->log.println((int)this->calibration.b.potSetting);
     }
   } else {
-    uint8_t currentState = this->state.encoderState;
+    //Serial.print("Raw: "); Serial.println(analogRead(this->state.channels.a.rawInputPin)); //Serial.print(" "); Serial.println(analogRead(this->state.channels.b.rawInputPin));
     int positionTemp = this->state.position;
     if( previousState != currentState ) {
       uint8_t currentDirection = this->getDirection(currentState);
@@ -277,11 +300,12 @@ void Encoder<POT,STORAGE, LOG>::update() {
         this->revolutions++;
       this->positionDidChange(revolutionCompleted, revolutions, previousDirection, state.position, currentDirection, positionTemp);
 
-      previousState = currentState;
+      
       this->state.position = positionTemp;
       previousDirection = currentDirection;
     }
   }
+  previousState = currentState;
 }
 
 template <typename POT, typename STORAGE, typename LOG>
@@ -327,7 +351,7 @@ inline void Encoder<POT,STORAGE, LOG>::positionDidChange(
 
   // determine if a revolution has been completed.
   if( revolutionCompleted ) {
-    this->log.print("Index: "); this->log.println(revolutions);
+    // this->log.print("Index: "); this->log.println(revolutions);
     digitalWrite(INDEX_INDICATOR_PIN, LOW);
   } else {
     digitalWrite(INDEX_INDICATOR_PIN, HIGH);
@@ -381,15 +405,14 @@ static inline void updateChannelCalibration(ChannelCalibration& calibration, uin
     if( delta > CALIBRATION_INTERVAL_LENGTH ) {  
       // NOTE: Higher POT settings give lower resistance
       if( isDutyCycleGreatherThan50Percent(calibration.dutyCycleMA) ) {
-        // the reference voltage is too low causing us to stay in a HIGH state
-        // too long. We raise the voltage by decreasing resistance, which we
-        // achieve by increasing the POT setting. So leave this bit set.
-
-      } else {
-        // the reference voltage is too high causing us to stay in a LOW state
-        // too long. We lower the voltage by increasing resistance, which we
-        // achieve by decreasing the POT setting. So unset this bit.
+        // the reference voltage is too high causing us to stay in a HIGH state
+        // too long. Decrease the POT setting, by unsetting the current bit, to
+        // lower the reference voltage.
         calibration.potSetting = calibration.potSetting ^ calibration.mask;
+      } else {
+        // the reference voltage is too low causing us to stay in a LOW state
+        // too long. Do NOT unset the current bit as that would lower the 
+        // reference voltage, which is what we want to avoid.        
       }
 
       if( calibration.mask == 1 ) {
@@ -434,10 +457,15 @@ static inline void updateCalibration(
   updateChannelCalibration(calibration.b, channelBValue, currentTime);
 
   if( oldChannelAPotSetting != calibration.a.potSetting ) {
+    Serial.print("Changing channel A from "); printState(oldChannelAPotSetting);Serial.print(" to "); printState(calibration.a.potSetting); Serial.println("");
+    Serial.print("Duty cycle A: "); Serial.println(calibration.a.dutyCycleMA.movingAverage.average / 255.0);
+    //Serial.print("pot.write( "); Serial.print((int)channelA); Serial.print(" "); Serial.print((int)calibration.a.potSetting); Serial.println(" )");
     pot.write(channelA, calibration.a.potSetting);
   }
 
   if( oldChannelBPotSetting != calibration.b.potSetting ) {
+    Serial.print("Changing channel B from "); printState(oldChannelBPotSetting);Serial.print(" to "); printState(calibration.b.potSetting); Serial.println("");  
+    Serial.print("Duty cycle B: "); Serial.println(calibration.b.dutyCycleMA.movingAverage.average / 255.0);  
     pot.write(channelB, calibration.b.potSetting);  
   }
 }
@@ -479,3 +507,4 @@ template class Encoder<MCP42xxx,EEPROMClass,Print>;
 #endif
 
 }
+

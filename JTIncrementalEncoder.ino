@@ -62,19 +62,23 @@ static void channelBISR() {
 void setup() {
   SPI.begin();
   Serial.begin(9600);
-  encoder.loadSettings(EEPROM, 0);
+  //encoder.loadSettings(EEPROM, 0);
   i2cSlave.begin(SLAVE_ADDRESS);
 }
 
 void loop() {
   static uint8_t calibratedStatus = i2cSlave.getCalibratedStatus();
   i2cSlave.update();
-  
+//  if( ! a_fired ) {
+//    delay(5000);
+//    encoder.startCalibration(); 
+//    a_fired = 1;
+//  }
   static uint8_t newCalibratedStatus = i2cSlave.getCalibratedStatus();
   if( newCalibratedStatus && newCalibratedStatus != calibratedStatus ) {
     // we've recalibrated, save settings
     // TODO: This seems like a sloppy way to figure out if we should save. Find a way to remove the suck from this.
-    encoder.saveSettings(EEPROM, 0);
+    //encoder.saveSettings(EEPROM, 0);
   }
   calibratedStatus = newCalibratedStatus; 
 }

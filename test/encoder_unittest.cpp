@@ -325,11 +325,9 @@ TEST_F(EncoderTestSuite, updateCalibration) {
     std::bitset<8>(calibration.mask).to_string());
 
   // check that the resistance setting for the POT has the most significant bit
-  // set, since we need to decrease resistance (and raise reference voltage), 
-  // and that the next bit over is also set since we are in the second phase of 
-  // calibration.
+  // unset since we need to decrease the reference voltage
   EXPECT_EQ(
-    std::string("11000000"),
+    std::string("01000000"),
     std::bitset<8>(calibration.potSetting).to_string());
 
   // calibration not done
@@ -357,7 +355,7 @@ TEST_F(EncoderTestSuite, updateCalibration) {
       std::string("01000000"), 
       std::bitset<8>(calibration.mask).to_string());
     EXPECT_EQ(
-        std::string("11000000"),
+        std::string("01000000"),
         std::bitset<8>(calibration.potSetting).to_string());
     updateChannelCalibration(
             calibration, 
@@ -373,10 +371,10 @@ TEST_F(EncoderTestSuite, updateCalibration) {
     std::string("00100000"),
     std::bitset<8>(calibration.mask).to_string());
 
-  // check that we left the previous bit set and set the next one for the next
-  // phase
+  // the reference voltage should still be too high so ensure the previous bit
+  // was unset
   EXPECT_EQ(
-    std::string("11100000"),
+    std::string("00100000"),
     std::bitset<8>(calibration.potSetting).to_string());
 
   // calibration not done
@@ -384,7 +382,7 @@ TEST_F(EncoderTestSuite, updateCalibration) {
 
   // do the remaining 6 phases
   for(int phase = 2; phase < 8; phase++ ) {
-    float threshold = (calibration.potSetting / 255.0)*5;
+    float threshold = (1.0 - calibration.potSetting / 255.0)*5;
     generateWaveSamples(
       interval, 
       1000,
@@ -408,9 +406,10 @@ TEST_F(EncoderTestSuite, updateCalibration) {
 
   // after the 8 phases run, the calibration should be finished
   EXPECT_TRUE(calibration.finished);
+  
   // the pot setting roughly corresponds to how high the reference voltage is,
   // which should roughly converge towards the center of amplitude
-  EXPECT_NEAR(4, (calibration.potSetting/255.0)*5, 0.2);
+  EXPECT_NEAR(4, (1.0 - calibration.potSetting/255.0)*5, 0.2);
 }
 
 TEST_F(EncoderTestSuite, updatePosition) {
