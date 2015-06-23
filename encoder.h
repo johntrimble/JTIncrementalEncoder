@@ -2,8 +2,8 @@
 #define encoder_h
 
 #include <inttypes.h>
-#include <MCP42xxx.h>
 #include "Arduino.h"
+#include "jt_calibrator.h"
 
 namespace JTIncrementalEncoder {
 
@@ -14,32 +14,12 @@ const int DIVISIONS = 92;
 const uint8_t CLOCKWISE = 0;
 const uint8_t COUNTERCLOCKWISE = 1;
 
-const uint8_t MOVING_AVERAGE_DATA_SIZE = 16; // 2^4
-const unsigned long DUTY_CYCLE_MA_SAMPLE_LENGTH = 131072; // 2^17
-
-typedef struct {
-  uint8_t* head;
-  uint8_t* data_end;
-  int average;
-  uint8_t ready;
-  uint8_t data[MOVING_AVERAGE_DATA_SIZE]; 
-} MovingAverage;
-
-typedef struct {
-  unsigned long sampleEndTime;
-  unsigned long lastCheckTime;
-  unsigned long acc;
-  MovingAverage movingAverage;
-} DutyCycleMovingAverage;
-
 typedef struct {
   int inputPin;
-  int rawInputPin;
   int interrupt;
   int average;
   int minValue;
   int maxValue;
-  MCP42xxx::Channel channel;
   void (*isrFunc)(void);
 } EncoderChannel;
 
@@ -64,29 +44,18 @@ typedef struct {
   int position;
 } EncoderState;
 
-const uint8_t SAMPLE_COUNT = 5;
-const unsigned long CALIBRATION_INTERVAL_LENGTH = 3000000;
+template<typename CALIBRATOR>
+struct Calibration {
+  CALIBRATOR& a;
+  CALIBRATOR& b;
+  Calibration(CALIBRATOR& a, CALIBRATOR& b)
+    : a(a), b(b) { 
+  }
+};
 
-const unsigned long SAMPLE_TIMEOUT = 5000000; // 5 seconds
-
-typedef struct {
-  uint8_t mask;
-  uint8_t potSetting;
-  uint8_t finished;
-  unsigned long lastUpdateTime;
-  DutyCycleMovingAverage dutyCycleMA;
-  //SamplingData samplingData;
-} ChannelCalibration;
-
-typedef struct {
-  ChannelCalibration a;
-  ChannelCalibration b;
-} Calibration;
-
-template <typename POT, typename STORAGE, typename LOG>
+template <typename CALIBRATOR, typename STORAGE, typename LOG>
 class Encoder {
-  Calibration calibration;
-  POT& pot;
+  Calibration<CALIBRATOR>& calibration;
   STORAGE& storage;
   LOG& log;
   uint8_t calibrating;
@@ -104,17 +73,13 @@ public:
   // TODO: make the 'state' instance variable private and fix whatever is causing it to be public.
   EncoderState state;
   Encoder(
-    POT& pot,
     STORAGE& EEPROM,
     LOG& log,
-    uint8_t channelAInputPin, 
-    uint8_t channelARawInputPin,
-    MCP42xxx::Channel channelApotChannel,
+    Calibration<CALIBRATOR>& calibration,
+    uint8_t channelAInputPin,
     uint8_t channelAInterrupt,
     void (*channelAIsrFunc)(void),
     uint8_t channelBInputPin,
-    uint8_t channelBRawInputPin,
-    MCP42xxx::Channel channelBpotChannel,
     uint8_t channelBInterrupt,
     void (*channelBIsrFunc)(void));
 

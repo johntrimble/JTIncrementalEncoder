@@ -1,6 +1,4 @@
-#include <Wire.h>
-#include <EEPROM.h>
-#include <MCP42xxx.h>
+
 #include "interface.h"
 
 namespace JTIncrementalEncoder {
@@ -88,6 +86,7 @@ void EncoderInterface<WIRE,ENCODER>::update() {
   if( !calibrating && newCalibratingValue ) {
     this->encoder.startCalibration();
   } else if( calibrating && !newCalibratingValue ) {
+    // TODO: What do we do if calibration is stopped mid way through?
     //this->encoder.stopCalibration();
   }
   calibrating = newCalibratingValue;
@@ -137,8 +136,14 @@ void EncoderInterface<WIRE,ENCODER>::receiveEvent(int bytesReceived) {
   }
 }
 
+} // end namespace JTIncrementalEncoder
+
 #ifndef JTIncrementalEncoder_SKIP_DEFAULT_TEMPLATE_INSTANTIATION
-template class EncoderInterface<TwoWire, Encoder<MCP42xxx, EEPROMClass, Print> >;
+#include <Wire.h>
+#include <EEPROM.h>
+namespace JTIncrementalEncoder {
+template class EncoderInterface<TwoWire, Encoder<EEPROMClass, Print> >;
+}
 #endif
 
-}
+

@@ -6,28 +6,21 @@
 #include <vector>
 #include <bitset>
 #include <string>
+
 #include "encoder.cpp"
-#include "Arduino.h"
-#include "MCP42xxx.h"
 
 using namespace JTIncrementalEncoder;
 
-// Channel A
-static const int CHANNEL_A_INPUT_PIN = 2;
-static const int CHANNEL_A_INTERRUPT = 0;
-static const int CHANNEL_A_RAW_INPUT_PIN = 5;
+// our own implementation of micros(...) and millis(...) for testing
+static unsigned long currentMicros = 0;
+unsigned long micros() {
+  return currentMicros;
+}
 
-// Channel B
-static const int CHANNEL_B_INPUT_PIN = 3;
-static const int CHANNEL_B_INTERRUPT = 1;
-static const int CHANNEL_B_RAW_INPUT_PIN = 6;
-
-void MCP42xxx::write(MCP42xxx::Channel channel, uint8_t value) { }
-
-class MockPot {
-public:
-  MOCK_METHOD2(write, void(MCP42xxx::Channel channel, uint8_t value));
-};
+static unsigned long currentMillis = 0;
+unsigned long millis() {
+  return currentMillis;
+}
 
 class NopLog {
 public:
@@ -43,40 +36,119 @@ public:
   MOCK_METHOD2(write, void(int addr, uint8_t val));
 };
 
+class MockCalibrator {
+public:
+  MOCK_METHOD1(pause, void(unsigned long));
+  MOCK_METHOD1(resume, void(unsigned long));
+  MOCK_METHOD1(begin, void(unsigned long));
+  MOCK_METHOD0(isFinished, uint8_t(void));
+  MOCK_METHOD1(update, uint8_t(unsigned long));
+};
+
 class EncoderTestSuite : public ::testing::Test {
 public:
-  Encoder<MockPot, MockStorage, NopLog> *encoder;
+  static const int CHANNEL_A_INPUT_PIN = 2;
+  static const int CHANNEL_A_INTERRUPT = 0;
+  static const int CHANNEL_B_INPUT_PIN = 3;
+  static const int CHANNEL_B_INTERRUPT = 1;
+
+  Encoder<MockCalibrator, MockStorage, NopLog> *encoder;
   NopLog *log;
   MockStorage *storage;
-  MockPot *pot;
+  MockCalibrator* calibratorA;
+  MockCalibrator* calibratorB;
+  Calibration<MockCalibrator> *calibration;
 
   void SetUp() {
-    pot = new MockPot();
     storage = new MockStorage();
     log = new NopLog();
-    encoder = new Encoder<MockPot, MockStorage, NopLog>(
-      *pot, 
+    calibratorA = new MockCalibrator();
+    calibratorB = new MockCalibrator();
+    calibration = new Calibration<MockCalibrator>(*calibratorA, *calibratorB);
+    encoder = new Encoder<MockCalibrator, MockStorage, NopLog>(
       *storage, 
-      *log,  
+      *log,
+      *calibration,
       CHANNEL_A_INPUT_PIN, 
-      CHANNEL_A_RAW_INPUT_PIN,
-      MCP42xxx::CHANNEL_0,
       CHANNEL_A_INTERRUPT,
       NULL,
       CHANNEL_B_INPUT_PIN,
-      CHANNEL_B_RAW_INPUT_PIN,
-      MCP42xxx::CHANNEL_1,
       CHANNEL_B_INTERRUPT,
       NULL);
   }
 
   void TearDown() {
     delete encoder;
+    delete calibration;
+    delete calibratorB;
+    delete calibratorA;
     delete log;
     delete storage;
-    delete pot;
   }
 };
+
+TEST_F(EncoderTestSuite, calibrating) {
+  const ::testing::Sequence s1, s2;
+
+  // check starting calibration
+  EXPECT_CALL(*(this->calibratorA), begin(7))
+    .Times(1)
+    .InSequence(s1);
+  EXPECT_CALL(*(this->calibratorB), begin(7))
+    .Times(1)
+    .InSequence(s2);
+
+  currentMillis = 7;
+  encoder->startCalibration();
+
+  // this is an annoying bit of public state that should be removed
+  ASSERT_FALSE(encoder->state.calibrated);
+
+
+  // check Encoder.update() delegates to calibrator when calibrating
+  EXPECT_CALL(*(this->calibratorA), update(10))
+    .Times(1)
+    .InSequence(s1)
+    .WillRepeatedly(testing::Return(0));
+  EXPECT_CALL(*(this->calibratorA), isFinished())
+    .Times(1)
+    .InSequence(s1)
+    .WillRepeatedly(testing::Return(0)); 
+  EXPECT_CALL(*(this->calibratorB), update(10))
+    .Times(1)
+    .InSequence(s2)
+    .WillRepeatedly(testing::Return(0));
+  EXPECT_CALL(*(this->calibratorB), isFinished())
+    .Times(testing::AtMost(1))
+    .InSequence(s2)
+    .WillRepeatedly(testing::Return(0)); 
+  
+  currentMillis = 10;
+  encoder->update();
+
+
+  // check completion of calibration
+  EXPECT_CALL(*(this->calibratorA), update(13))
+    .Times(1)
+    .InSequence(s1)
+    .WillRepeatedly(testing::Return(0));
+  EXPECT_CALL(*(this->calibratorA), isFinished())
+    .Times(1)  
+    .InSequence(s1)
+    .WillRepeatedly(testing::Return(1));
+  EXPECT_CALL(*(this->calibratorB), update(13))
+    .Times(1)
+    .InSequence(s2)
+    .WillRepeatedly(testing::Return(0));
+  EXPECT_CALL(*(this->calibratorB), isFinished())
+    .Times(1)
+    .InSequence(s2)
+    .WillRepeatedly(testing::Return(1));
+
+  currentMillis = 13;
+  encoder->update();
+  ASSERT_TRUE(encoder->state.calibrated);
+}
 
 TEST_F(EncoderTestSuite, getDirection_CLOCKWISE) {
   EXPECT_EQ(CLOCKWISE, this->encoder->getDirection(0x12)); // 00010010
@@ -168,248 +240,6 @@ TEST_F(EncoderTestSuite, updateChannelBEncoderState) {
 
   EXPECT_EQ(std::string("10000000"), std::bitset<8>(encoder_state).to_string());
   EXPECT_EQ(17, index);
-}
-
-typedef struct {
-  unsigned long measureTime;
-  float rawValue;
-  uint8_t value;
-} Sample;
-
-void generateWaveSamples(
-  unsigned long step, 
-  unsigned int count,
-  float threshold,
-  float frequency, 
-  float amplitude, 
-  float phase, 
-  float center,
-  std::vector<Sample>& samples) {
-
-  for(unsigned int i = 0; i < count; i++ ) {
-    Sample sample;
-    sample.measureTime = (i+1)*step;
-    sample.rawValue = amplitude
-      * sin( 2 * M_PI * frequency * ( sample.measureTime / 1000000.0 ) + phase )
-      + center;
-    sample.value = (sample.rawValue > threshold)? HIGH : LOW;
-    samples.push_back(sample);
-  }
-}
-
-void checkDutyCycleMovingAverage(
-  unsigned long step,
-  int f,
-  int t,
-  double threshold,
-  unsigned int count) {
-
-  DutyCycleMovingAverage dutyCycleMA;
-  unsigned long timeUntilAverageReadyMicros =  DUTY_CYCLE_MA_SAMPLE_LENGTH 
-    * MOVING_AVERAGE_DATA_SIZE + DUTY_CYCLE_MA_SAMPLE_LENGTH - 1;
-
-  std::vector<Sample> samples;
- 
-  generateWaveSamples(step, count, threshold, f / 2.0, t, 0, 0, samples);
-
-  initDutyCycleMovingAverage(dutyCycleMA, 0);
-
-  for( unsigned int i = 0; i < count; i++ ) {
-    updateDutyCycleMA(dutyCycleMA, samples[i].value, samples[i].measureTime);
-  }
-
-  unsigned long startTime = samples[count - 1].measureTime;
-  if( startTime > timeUntilAverageReadyMicros ) {
-    startTime -= timeUntilAverageReadyMicros;
-  } else {
-    startTime = 0;
-  }
-
-  unsigned long highCount = 0;
-  unsigned long totalCount = 0;
-  float expectedDutyCycle;
-  for(unsigned int i = 0; i < count; i++ ) {
-    if( samples[i].measureTime >= startTime ) {
-      if( samples[i].value == HIGH )
-        highCount++;
-      totalCount++;
-    }
-  }
-  expectedDutyCycle = highCount/(float)totalCount;
-
-  EXPECT_TRUE(dutyCycleMA.movingAverage.ready);
-  EXPECT_NEAR(
-    expectedDutyCycle, 
-    dutyCycleMA.movingAverage.average/(float)255, 
-    0.10);
-
-  if( expectedDutyCycle > 0.5 ) {
-    EXPECT_TRUE(isDutyCycleGreatherThan50Percent(dutyCycleMA));
-  } else {
-    EXPECT_FALSE(isDutyCycleGreatherThan50Percent(dutyCycleMA));
-  }
-}
-
-TEST_F(EncoderTestSuite, dutyCycleMovingAverage) {
-  unsigned long timeUntilAverageReadyMicros = DUTY_CYCLE_MA_SAMPLE_LENGTH 
-    * MOVING_AVERAGE_DATA_SIZE + DUTY_CYCLE_MA_SAMPLE_LENGTH - 1;
-  const int numberThresholds = 4;
-  const int numberCounts = 2;
-  const int numberIntervals = 2;
-  float thresholds[numberThresholds] = {0.75,-0.75, 0.20, -0.20};
-  float counts[numberCounts] = {1000, 1500};
-  unsigned long intervals[numberIntervals] = {
-    (timeUntilAverageReadyMicros / 1000.0), 
-    (timeUntilAverageReadyMicros / 432.0)};
-  for( int i = 0; i < numberThresholds; i++ ) {
-    for( int j = 0; j < numberCounts; j++ ) {
-      for( int k = 0; k < numberIntervals; k++ ) {
-        checkDutyCycleMovingAverage(intervals[k], 
-          5, 1, thresholds[i], counts[j]);
-      }
-    }
-  }
-}
-
-void timeShiftSamples(std::vector<Sample>& samples, unsigned long timeMicros) {
-  for( std::vector<Sample>::iterator it = samples.begin(); 
-    it != samples.end(); 
-    ++it ) {
-
-    (*it).measureTime += timeMicros;
-  }
-}
-
-TEST_F(EncoderTestSuite, updateCalibration) {
-  ChannelCalibration calibration;
-  unsigned long timeUntilIterationDoneMicros = 
-    CALIBRATION_INTERVAL_LENGTH;
-  unsigned long interval = (timeUntilIterationDoneMicros / 1000.0) + 1;
-  std::vector<Sample> samples;
-  unsigned int sampleIdx = 0;
-
-  generateWaveSamples(
-    interval, 
-    1000,
-    2.5, // threshold
-    2.5, // frequency
-    1, // amplitude
-    0, // phase
-    4, // center of amplitude
-    samples);
-
-  initChannelCalibration(calibration, 0);
-
-  // check phase 1 of calibration
-  for( ; sampleIdx < 1000; sampleIdx++ ) {
-    // mask and pot should stay at 128 until phase 1 is done, which happens in
-    // CALIBRATION_INTERVAL_LENGTH microseconds
-    EXPECT_EQ(
-      std::string("10000000"), 
-      std::bitset<8>(calibration.mask).to_string());
-    EXPECT_EQ(
-        std::string("10000000"), 
-        std::bitset<8>(calibration.potSetting).to_string());
-    updateChannelCalibration(
-            calibration, 
-            samples[sampleIdx].value, 
-            samples[sampleIdx].measureTime);
-  }
-
-  // clean up
-  samples.clear();
-
-  // check that we moved the mask over one bit
-  EXPECT_EQ(
-    std::string("01000000"), 
-    std::bitset<8>(calibration.mask).to_string());
-
-  // check that the resistance setting for the POT has the most significant bit
-  // unset since we need to decrease the reference voltage
-  EXPECT_EQ(
-    std::string("01000000"),
-    std::bitset<8>(calibration.potSetting).to_string());
-
-  // calibration not done
-  EXPECT_FALSE(calibration.finished);
-
-  // We will simulate changes in the reference voltage by adjusting the
-  // threshold for the generated signal.
-  generateWaveSamples(
-    interval, 
-    1000,
-    (calibration.potSetting / 255.0) * 5, // threshold
-    2.5, // frequency
-    1, // amplitude
-    0, // phase
-    4, // center of amplitude
-    samples);
-
-  timeShiftSamples(samples, interval*1000);
-  
-  // check phase 2 of calibration
-  for( int i = 0; i < 1000; i++ ) {
-    // mask and pot should stay at 64 until phase 2 is done, which happens in
-    // CALIBRATION_INTERVAL_LENGTH microseconds
-    EXPECT_EQ(
-      std::string("01000000"), 
-      std::bitset<8>(calibration.mask).to_string());
-    EXPECT_EQ(
-        std::string("01000000"),
-        std::bitset<8>(calibration.potSetting).to_string());
-    updateChannelCalibration(
-            calibration, 
-            samples[i].value, 
-            samples[i].measureTime);
-  }
-
-  // clean up
-  samples.clear();
-
-  // check that we moved to the next bit
-  EXPECT_EQ(
-    std::string("00100000"),
-    std::bitset<8>(calibration.mask).to_string());
-
-  // the reference voltage should still be too high so ensure the previous bit
-  // was unset
-  EXPECT_EQ(
-    std::string("00100000"),
-    std::bitset<8>(calibration.potSetting).to_string());
-
-  // calibration not done
-  EXPECT_FALSE(calibration.finished);
-
-  // do the remaining 6 phases
-  for(int phase = 2; phase < 8; phase++ ) {
-    float threshold = (1.0 - calibration.potSetting / 255.0)*5;
-    generateWaveSamples(
-      interval, 
-      1000,
-      threshold,
-      2.5, // frequency
-      1, // amplitude
-      0, // phase
-      4, // center of amplitude
-      samples);
-    timeShiftSamples(samples, interval*1000*phase);
-
-    for( int i = 0; i < 1000; i++ ) {
-      updateChannelCalibration(
-              calibration, 
-              samples[i].value, 
-              samples[i].measureTime);
-    }
-    // std::cout << "POT: " << std::bitset<8>(calibration.potSetting) << "\n";
-    samples.clear();
-  }
-
-  // after the 8 phases run, the calibration should be finished
-  EXPECT_TRUE(calibration.finished);
-  
-  // the pot setting roughly corresponds to how high the reference voltage is,
-  // which should roughly converge towards the center of amplitude
-  EXPECT_NEAR(4, (1.0 - calibration.potSetting/255.0)*5, 0.2);
 }
 
 TEST_F(EncoderTestSuite, updatePosition) {

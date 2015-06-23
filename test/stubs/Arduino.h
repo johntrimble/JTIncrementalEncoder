@@ -75,6 +75,7 @@ void attachInterrupt(uint8_t, void (*)(void), int mode);
 int map(int value, int sourceStart, int sourceEnd, int destStart, int destEnd);
 
 unsigned long micros();
+unsigned long millis();
 
 void delay(unsigned long);
 

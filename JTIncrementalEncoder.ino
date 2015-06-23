@@ -1,10 +1,10 @@
 #include <EEPROM.h>
 #include <SPI.h>
 #include <Wire.h>
-#include <MCP42xxx.h>
 #include "JTIncrementalEncoder.h"
 #include "encoder.h"
 #include "interface.h"
+#include "jt_calibrator.h"
 
 using namespace JTIncrementalEncoder;
 
@@ -14,37 +14,51 @@ static const int SLAVE_ADDRESS = 31;
 // Channel A
 static const int CHANNEL_A_INPUT_PIN = 2;
 static const int CHANNEL_A_INTERRUPT = 0;
-static const int CHANNEL_A_RAW_INPUT_PIN = A3;
+static const int CHANNEL_A_REFERENCE_PIN = 9;
 
 // Channel B
 static const int CHANNEL_B_INPUT_PIN = 3;
 static const int CHANNEL_B_INTERRUPT = 1;
-static const int CHANNEL_B_RAW_INPUT_PIN = A2;
+static const int CHANNEL_B_REFERENCE_PIN = 10;
 
 // Interrupt vars
 static byte isrSteps = 0;
 
-// debug
-uint8_t a_fired = 0;
-uint8_t b_fired = 0;
+// build and configure the object graph
+DigitalInputPin inputA(CHANNEL_A_INPUT_PIN);
+AnalogOutputPin referenceA(CHANNEL_A_REFERENCE_PIN);
+DefaultReferenceCalibrator calibratorA(
+  referenceA, 
+  interrupt0, 
+  inputA, 
+  Serial, 
+  1000, 
+  1000);
 
-// build and configure object graph
-MCP42xxx pot(10, -1, -1);
-Encoder<MCP42xxx,EEPROMClass,Print> encoder(
-  pot, 
+DigitalInputPin inputB(CHANNEL_B_INPUT_PIN);
+AnalogOutputPin referenceB(CHANNEL_B_REFERENCE_PIN);
+DefaultReferenceCalibrator calibratorB(
+  referenceB, 
+  interrupt1, 
+  inputB, 
+  Serial, 
+  1000, 
+  1000);
+
+Calibration calibration = {calibratorA, calibratorB};
+
+Encoder<DefaultReferenceCalibrator, EEPROMClass,Print> encoder(
   EEPROM,
   Serial,
-  CHANNEL_A_INPUT_PIN, 
-  CHANNEL_A_RAW_INPUT_PIN,
-  MCP42xxx::CHANNEL_0,
+  calibration,
+  CHANNEL_A_INPUT_PIN,
   CHANNEL_A_INTERRUPT,
   &channelAISR,
   CHANNEL_B_INPUT_PIN,
-  CHANNEL_B_RAW_INPUT_PIN,
-  MCP42xxx::CHANNEL_1,
   CHANNEL_B_INTERRUPT,
   &channelBISR);
-EncoderInterface<TwoWire, Encoder<MCP42xxx,EEPROMClass,Print> > i2cSlave(Wire, encoder);
+
+EncoderInterface<TwoWire, Encoder<EEPROMClass,Print> > i2cSlave(Wire, encoder);
 
 /**
  * Interrupt handlers for channel A and B. Updates encoderState.
@@ -59,8 +73,26 @@ static void channelBISR() {
   updateChannelBEncoderState(encoder.state.channels.b, encoder.state.encoderState, isrSteps);
 }
 
+void setupTimer1() {
+  noInterrupts();
+  // set timer 1 to 7812.5Hz
+  // 16MHz / (prescaler * (1 + TOP))
+  // 16MHz / (8 * 256) = 7812.5Hz
+  TCCR1A = 0;
+  TCCR1B = 0;
+  TCNT1 = 0;
+  // fast PWM with TOP value of 255 (0xFF)
+  TCCR1A |= (1<<WGM10);
+  TCCR1B |= (1<<WGM12);
+  // non-inverting mode
+  TCCR1A |= (1<<COM1A1)|(1<<COM1B1);
+  // prescaler of 8
+  TCCR1B |= (1<<CS11);
+  interrupts();
+}
+
 void setup() {
-  SPI.begin();
+  setupTimer1();
   Serial.begin(9600);
   //encoder.loadSettings(EEPROM, 0);
   i2cSlave.begin(SLAVE_ADDRESS);
@@ -69,11 +101,6 @@ void setup() {
 void loop() {
   static uint8_t calibratedStatus = i2cSlave.getCalibratedStatus();
   i2cSlave.update();
-//  if( ! a_fired ) {
-//    delay(5000);
-//    encoder.startCalibration(); 
-//    a_fired = 1;
-//  }
   static uint8_t newCalibratedStatus = i2cSlave.getCalibratedStatus();
   if( newCalibratedStatus && newCalibratedStatus != calibratedStatus ) {
     // we've recalibrated, save settings

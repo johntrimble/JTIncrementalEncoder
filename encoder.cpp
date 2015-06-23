@@ -1,121 +1,23 @@
 #include <limits.h>
-#include <EEPROM.h>
 #include "encoder.h"
 
 namespace JTIncrementalEncoder {
 
 static const int INDEX_INDICATOR_PIN = 7;
 
-template<typename POT>
-static inline void updateCalibration(MCP42xxx::Channel& channelA, MCP42xxx::Channel& channelB, POT& pot, Calibration& calibration, uint8_t encoderState);
 static inline void stopCalibration(EncoderChannelPair& channelPair);
 static uint8_t getDirection(uint8_t encoderState);
 static uint8_t updatePosition(uint8_t previousState, uint8_t currentState, int &position);
 static uint8_t getCurrentChannelValue(uint8_t encoderState, uint8_t channelIndex);
 static uint8_t getPreviousChannelValue(uint8_t encoderState, uint8_t channelIndex);
-static inline void initCalibration(Calibration& calibration);
-static inline void updateDutyCycleAverage(uint8_t encoderState, unsigned long currentTime);
-static inline uint8_t isCalibrationFinished(Calibration& calibration);
-template<typename POT>
+
+template<typename CALIBRATOR>
+static inline uint8_t isCalibrationFinished(Calibration<CALIBRATOR>& calibration);
+
+template<typename CALIBRATOR>
 static inline void updateCalibration(
-  MCP42xxx::Channel& channelA, 
-  MCP42xxx::Channel& channelB, 
-  POT& pot, 
-  Calibration& calibration, 
-  uint8_t encoderState, 
+  Calibration<CALIBRATOR>& calibration, 
   unsigned long currentTime);
-
-void initMovingAverage(MovingAverage& buffer) {
-  buffer.head = buffer.data;
-  buffer.data_end = buffer.data + MOVING_AVERAGE_DATA_SIZE;
-  buffer.average = 0;
-  buffer.ready = 0;
-  for( uint8_t* i = buffer.data; i != buffer.data_end; i++) {
-    *i = 0;
-  }
-}
-
-void addToMovingAverage(MovingAverage& buffer, uint8_t value) {
-  uint8_t oldEndValue = *(buffer.head);
-  *(buffer.head) = value;
-
-  // NOTE: subtraction first to prevent overflow!
-  buffer.average = (buffer.average - (oldEndValue >> 4)) + (value >> 4);
-  buffer.head++;
-  if( buffer.head == buffer.data_end ) {
-    buffer.head = buffer.data;
-    buffer.ready = 1;
-  }
-  // std::cout << "Adding " << (int)value << "\n";
-}
-
-uint8_t currentMovingAverage(MovingAverage& buffer) {
-  return buffer.average;
-}
-
-uint8_t isReadyMovingAverage(MovingAverage& buffer) {
-  return buffer.ready;
-}
-
-static inline unsigned long calcMicrosDelta(unsigned long currentTime, unsigned long startTime) {
-  unsigned long delta;
-  // determine how long this measurement has gone on
-  if( currentTime < startTime ) {
-    // the micros() value rolls over every 70 minutes, correct for that
-    delta = currentTime + (ULONG_MAX - startTime);
-  } else {
-    delta = currentTime - startTime;
-  }
-  return delta;
-}
-
-void initDutyCycleMovingAverage(
-  DutyCycleMovingAverage& dutyCycleMA,
-  unsigned long currentTimeMicros) {
-
-  initMovingAverage(dutyCycleMA.movingAverage);
-  dutyCycleMA.sampleEndTime = currentTimeMicros + DUTY_CYCLE_MA_SAMPLE_LENGTH;
-  dutyCycleMA.lastCheckTime = currentTimeMicros;
-  dutyCycleMA.acc = 0;
-}
-
-static inline uint8_t isDutyCycleGreatherThan50Percent(DutyCycleMovingAverage& dutyCycleMA) {
-  return dutyCycleMA.movingAverage.average > 127;
-}
-
-void updateDutyCycleMA(
-  DutyCycleMovingAverage& dutyCycleMA, 
-  uint8_t channelValue, 
-  unsigned long currentTimeMicros) {
-  //std::cout << "updateDutyCycleMA( " << (int)channelValue << " " << currentTimeMicros << " )\n";
-  unsigned long delta = calcMicrosDelta(
-    currentTimeMicros, 
-    dutyCycleMA.lastCheckTime);
-
-  if( channelValue == HIGH )
-    dutyCycleMA.acc += delta;
-
-  if( currentTimeMicros > dutyCycleMA.sampleEndTime ) {
-    // trying to avoid multiplication and division here for performance 
-    // reasons, but the need branch statement might be negating any
-    // performance benefit...
-
-    // the max value of acc is 2^17 (our sample length). We want an 8 bit 
-    // number, so just take 8 most significant bits of our 17 bit number.
-    if( dutyCycleMA.acc >= DUTY_CYCLE_MA_SAMPLE_LENGTH ) {
-      dutyCycleMA.acc = DUTY_CYCLE_MA_SAMPLE_LENGTH-1;
-    }
-    uint8_t value = (dutyCycleMA.acc >> 9);
-    // uint8_t hardValue = (dutyCycleMA.acc/(double)DUTY_CYCLE_MA_SAMPLE_LENGTH)*255;
-    // std::cout << (long)dutyCycleMA.acc << " " << (int)value << " " << (int)hardValue << "\n";
-    //std::cout << "Preparing to add " << (int)value << " with acc " << dutyCycleMA.acc <<  "\n";
-    //Serial.print("Adding value "); Serial.println((int)value);
-    addToMovingAverage(dutyCycleMA.movingAverage, value);
-    dutyCycleMA.sampleEndTime = currentTimeMicros + DUTY_CYCLE_MA_SAMPLE_LENGTH;
-    dutyCycleMA.acc = 0;
-  }
-  dutyCycleMA.lastCheckTime = currentTimeMicros;
-}
 
 static inline uint8_t getCurrentChannelValue(uint8_t encoderState, uint8_t channelIndex) {
   return (encoderState >> (5 - channelIndex)) & 0x1;
@@ -130,15 +32,10 @@ static inline void printState(uint8_t encoderState) {
     if( (encoderState<<i)&0x80 ) {
       Serial.print("1");
     } else {
-      Serial.print("0");
+      Serial.print("0"); 
     }
   }
 //  Serial.println("");
-}
-
-template<typename POT>
-static inline void updateVoltageReference(JTIncrementalEncoder::EncoderChannel& channel, POT& pot) {
-  pot.write(channel.channel, map(channel.average, 0, 1023, 0, 255));
 }
 
 template<typename STORAGE>
@@ -178,41 +75,31 @@ uint8_t saveSettings(STORAGE& storage, const EncoderChannel& channel, int& addr)
   return true;
 }
 
-template <typename POT, typename STORAGE, typename LOG>
-Encoder<POT,STORAGE, LOG>::Encoder(
-    POT& pot,
+template <typename CALIBRATOR, typename STORAGE, typename LOG>
+Encoder<CALIBRATOR, STORAGE, LOG>::Encoder(
     STORAGE& EEPROM,
     LOG& log,
-    uint8_t channelAInputPin, 
-    uint8_t channelARawInputPin,
-    MCP42xxx::Channel channelAPotChannel,
+    Calibration<CALIBRATOR>& calibration,
+    uint8_t channelAInputPin,
     uint8_t channelAInterrupt,
     void (*channelAIsrFunc)(void),
     uint8_t channelBInputPin,
-    uint8_t channelBRawInputPin,
-    MCP42xxx::Channel channelBPotChannel,
     uint8_t channelBInterrupt,
-    void (*channelBIsrFunc)(void)) : pot(pot), storage(EEPROM), log(log) { 
+    void (*channelBIsrFunc)(void)) : calibration(calibration), storage(EEPROM), log(log) { 
 
   this->calibrating = 0;
   this->revolutions = 0;
 
   this->state.channels.a.inputPin = channelAInputPin;
-  this->state.channels.a.rawInputPin = channelARawInputPin;
-  this->state.channels.a.channel = channelAPotChannel;
   this->state.channels.a.interrupt = channelAInterrupt;
   this->state.channels.a.isrFunc = channelAIsrFunc;
   
   this->state.channels.b.inputPin = channelBInputPin;
-  this->state.channels.b.rawInputPin = channelBRawInputPin;
-  this->state.channels.b.channel = channelBPotChannel;
   this->state.channels.b.interrupt = channelBInterrupt;
   this->state.channels.b.isrFunc = channelBIsrFunc;  
 
   pinMode(this->state.channels.a.inputPin, INPUT);
-  pinMode(this->state.channels.a.rawInputPin, INPUT);
   pinMode(this->state.channels.b.inputPin, INPUT);
-  pinMode(this->state.channels.b.rawInputPin, INPUT);
 
   // make this for debugging only
   pinMode(INDEX_INDICATOR_PIN, OUTPUT);
@@ -221,47 +108,38 @@ Encoder<POT,STORAGE, LOG>::Encoder(
   attachInterrupt(this->state.channels.b.interrupt, this->state.channels.b.isrFunc, CHANGE);
 }
 
-template <typename POT, typename STORAGE, typename LOG>
-void Encoder<POT,STORAGE, LOG>::updateVoltageReference() {
-  JTIncrementalEncoder::updateVoltageReference<POT>(this->state.channels.a, this->pot);
-  JTIncrementalEncoder::updateVoltageReference<POT>(this->state.channels.b, this->pot);
-}
-
-template <typename POT, typename STORAGE, typename LOG>
-uint8_t Encoder<POT,STORAGE, LOG>::getDirection(uint8_t encoderState) {
+template <typename CALIBRATOR, typename STORAGE, typename LOG>
+uint8_t Encoder<CALIBRATOR, STORAGE, LOG>::getDirection(uint8_t encoderState) {
   return JTIncrementalEncoder::getDirection(encoderState);
 }
 
-template <typename POT, typename STORAGE, typename LOG>
-const EncoderState& Encoder<POT,STORAGE, LOG>::getState() const { return this->state; }
+template <typename CALIBRATOR, typename STORAGE, typename LOG>
+const EncoderState& Encoder<CALIBRATOR, STORAGE, LOG>::getState() const { return this->state; }
 
-template <typename POT, typename STORAGE, typename LOG>
-void Encoder<POT,STORAGE, LOG>::resetPosition() {
+template <typename CALIBRATOR, typename STORAGE, typename LOG>
+void Encoder<CALIBRATOR, STORAGE, LOG>::resetPosition() {
   this->state.position = 0;
   this->revolutions = 0;
 }
 
-template <typename POT, typename STORAGE, typename LOG>
-void Encoder<POT,STORAGE, LOG>::startCalibration() { 
+template <typename CALIBRATOR, typename STORAGE, typename LOG>
+void Encoder<CALIBRATOR, STORAGE, LOG>::startCalibration() { 
   if( !this->calibrating ) {
+    unsigned long currentTime = millis();
+    this->state.calibrated = 0;
     this->calibrating = 1;
-    this->pot.write(this->state.channels.a.channel, 0x80);
-    this->pot.write(this->state.channels.b.channel, 0x80);
-    delay(200); // TODO: this delay might not be needed
-    // Ensure the encoder state gets set at least once by the interrupts
-    this->state.channels.a.isrFunc();
-    this->state.channels.b.isrFunc();
-    initCalibration(this->calibration, micros());  
+    this->calibration.a.begin(currentTime);
+    this->calibration.b.begin(currentTime);
   }
 }
 
-template <typename POT, typename STORAGE, typename LOG>
-void Encoder<POT,STORAGE, LOG>::stopCalibration() {
+template <typename CALIBRATOR, typename STORAGE, typename LOG>
+void Encoder<CALIBRATOR, STORAGE, LOG>::stopCalibration() {
   //this->calibrating = 0;
 }
 
-template <typename POT, typename STORAGE, typename LOG>
-void Encoder<POT,STORAGE, LOG>::update() { 
+template <typename CALIBRATOR, typename STORAGE, typename LOG>
+void Encoder<CALIBRATOR, STORAGE, LOG>::update() { 
   static uint8_t previousState = 0;
   static uint8_t previousDirection = CLOCKWISE;
   uint8_t currentState = this->state.encoderState;
@@ -270,25 +148,17 @@ void Encoder<POT,STORAGE, LOG>::update() {
   }
   
   if( this->calibrating ) {
-    // for the sake of testing, we get the micros here and pass it as an 
-    // argument
-    unsigned long currentTime = micros();
-    // updateDutyCycleAverage(this->state.encoderState, currentTime);
-
+    unsigned long currentTime = millis();
     JTIncrementalEncoder::updateCalibration(
-      this->state.channels.a.channel,
-      this->state.channels.b.channel,
-      this->pot,
       this->calibration,
-      this->state.encoderState,
       currentTime);
     if( isCalibrationFinished(calibration) ) {
       this->calibrating = 0;
-      this->log.println("Calibration finished");
-      this->log.print("Pot setting A: ");
-      this->log.println((int)this->calibration.a.potSetting);
-      this->log.print("Pot setting B: ");
-      this->log.println((int)this->calibration.b.potSetting);
+      this->state.calibrated = 1;
+      // calibration takes over the interrupts, restore them now that
+      // calibration is done
+      attachInterrupt(this->state.channels.a.interrupt, this->state.channels.a.isrFunc, CHANGE);
+      attachInterrupt(this->state.channels.b.interrupt, this->state.channels.b.isrFunc, CHANGE);
     }
   } else {
     //Serial.print("Raw: "); Serial.println(analogRead(this->state.channels.a.rawInputPin)); //Serial.print(" "); Serial.println(analogRead(this->state.channels.b.rawInputPin));
@@ -308,8 +178,8 @@ void Encoder<POT,STORAGE, LOG>::update() {
   previousState = currentState;
 }
 
-template <typename POT, typename STORAGE, typename LOG>
-uint8_t Encoder<POT,STORAGE, LOG>::saveSettings(STORAGE& storage, int addr) {
+template <typename CALIBRATOR, typename STORAGE, typename LOG>
+uint8_t Encoder<CALIBRATOR, STORAGE, LOG>::saveSettings(STORAGE& storage, int addr) {
   uint8_t rvalue = true;
   storage.write(addr, 179);
   addr++;
@@ -318,8 +188,8 @@ uint8_t Encoder<POT,STORAGE, LOG>::saveSettings(STORAGE& storage, int addr) {
   return rvalue;
 }
 
-template <typename POT, typename STORAGE, typename LOG>
-uint8_t Encoder<POT,STORAGE, LOG>::loadSettings(STORAGE& storage, int addr) {
+template <typename CALIBRATOR, typename STORAGE, typename LOG>
+uint8_t Encoder<CALIBRATOR, STORAGE, LOG>::loadSettings(STORAGE& storage, int addr) {
   uint8_t rvalue = true;
   // load settings from EEPROM
   if( 179 == storage.read(addr) ) {
@@ -335,8 +205,8 @@ uint8_t Encoder<POT,STORAGE, LOG>::loadSettings(STORAGE& storage, int addr) {
 
 // Note: Passing in by reference here is a performance optimization. This function should *not* actually change these 
 // values. This really only matters for the 'int' parameters, but is done for all of them for consistency.
-template <typename POT, typename STORAGE, typename LOG>
-inline void Encoder<POT,STORAGE, LOG>::positionDidChange(
+template <typename CALIBRATOR, typename STORAGE, typename LOG>
+inline void Encoder<CALIBRATOR, STORAGE, LOG>::positionDidChange(
     const uint8_t& revolutionCompleted,
     const uint8_t& revolutions,
     const uint8_t& previousDirection, 
@@ -375,99 +245,18 @@ static uint8_t getDirection(uint8_t encoderState) {
   }
 } 
 
-static inline uint8_t isChannelCalibrationFinished(ChannelCalibration& calibration) {
-  return calibration.finished;
+template<typename CALIBRATOR>
+static inline uint8_t isCalibrationFinished(Calibration<CALIBRATOR>& calibration) {
+  return calibration.a.isFinished() && calibration.b.isFinished();
 }
 
-static inline uint8_t isCalibrationFinished(Calibration& calibration) {
-  return calibration.a.finished && calibration.b.finished;
-}
-
-static inline void initChannelCalibration(ChannelCalibration& channelCalibration, unsigned long currentTimeMicros) {
-  channelCalibration.mask = 0x80;
-  channelCalibration.potSetting = 0x80;
-  channelCalibration.finished = 0;
-  channelCalibration.lastUpdateTime = currentTimeMicros;
-  initDutyCycleMovingAverage(channelCalibration.dutyCycleMA, currentTimeMicros);
-}
-
-static inline void initCalibration(Calibration& calibration, unsigned long currentTimeMicros) {
-  initChannelCalibration(calibration.a, currentTimeMicros);
-  initChannelCalibration(calibration.b, currentTimeMicros);
-}
-
-static inline void updateChannelCalibration(ChannelCalibration& calibration, uint8_t currentChannelValue, unsigned long currentTime) {
-  if( ! calibration.finished ) {
-    updateDutyCycleMA(calibration.dutyCycleMA, currentChannelValue, currentTime);
-
-    unsigned long delta = calcMicrosDelta(currentTime, calibration.lastUpdateTime);
-    
-    if( delta > CALIBRATION_INTERVAL_LENGTH ) {  
-      // NOTE: Higher POT settings give lower resistance
-      if( isDutyCycleGreatherThan50Percent(calibration.dutyCycleMA) ) {
-        // the reference voltage is too high causing us to stay in a HIGH state
-        // too long. Decrease the POT setting, by unsetting the current bit, to
-        // lower the reference voltage.
-        calibration.potSetting = calibration.potSetting ^ calibration.mask;
-      } else {
-        // the reference voltage is too low causing us to stay in a LOW state
-        // too long. Do NOT unset the current bit as that would lower the 
-        // reference voltage, which is what we want to avoid.        
-      }
-
-      if( calibration.mask == 1 ) {
-        // finished calibration
-        calibration.finished = 1;
-      } else {
-        // set next bit of potSetting
-        calibration.mask = calibration.mask >> 1;
-        calibration.potSetting = calibration.potSetting | calibration.mask;
-      }
-
-      // reset the last update time as we are beginning a new interval
-      calibration.lastUpdateTime = currentTime;
-    }
-  }
-}
-
-
-static inline void updateDutyCycleMovingAverage(
-  DutyCycleMovingAverage& dutyCycleMA, 
-  uint8_t channelValue, 
-  unsigned long currentTimeMicros) {
-
-  updateDutyCycleMA(dutyCycleMA, channelValue, currentTimeMicros);
-}
-
-template<typename POT>
+template<typename CALIBRATOR>
 static inline void updateCalibration(
-  MCP42xxx::Channel& channelA, 
-  MCP42xxx::Channel& channelB, 
-  POT& pot, 
-  Calibration& calibration, 
-  uint8_t encoderState, 
+  Calibration<CALIBRATOR>& calibration, 
   unsigned long currentTime) {
 
-  uint8_t channelAValue = getCurrentChannelValue(encoderState, 0);
-  uint8_t channelBValue = getCurrentChannelValue(encoderState, 1);
-  uint8_t oldChannelAPotSetting = calibration.a.potSetting;
-  uint8_t oldChannelBPotSetting = calibration.b.potSetting;
-
-  updateChannelCalibration(calibration.a, channelAValue, currentTime);
-  updateChannelCalibration(calibration.b, channelBValue, currentTime);
-
-  if( oldChannelAPotSetting != calibration.a.potSetting ) {
-    Serial.print("Changing channel A from "); printState(oldChannelAPotSetting);Serial.print(" to "); printState(calibration.a.potSetting); Serial.println("");
-    Serial.print("Duty cycle A: "); Serial.println(calibration.a.dutyCycleMA.movingAverage.average / 255.0);
-    //Serial.print("pot.write( "); Serial.print((int)channelA); Serial.print(" "); Serial.print((int)calibration.a.potSetting); Serial.println(" )");
-    pot.write(channelA, calibration.a.potSetting);
-  }
-
-  if( oldChannelBPotSetting != calibration.b.potSetting ) {
-    Serial.print("Changing channel B from "); printState(oldChannelBPotSetting);Serial.print(" to "); printState(calibration.b.potSetting); Serial.println("");  
-    Serial.print("Duty cycle B: "); Serial.println(calibration.b.dutyCycleMA.movingAverage.average / 255.0);  
-    pot.write(channelB, calibration.b.potSetting);  
-  }
+  calibration.a.update(currentTime);
+  calibration.b.update(currentTime);
 }
 
 static inline uint8_t updatePosition(uint8_t previousState, uint8_t currentState, int &position) {
@@ -503,7 +292,8 @@ static inline uint8_t updatePosition(uint8_t previousState, uint8_t currentState
 }
 
 #ifndef JTIncrementalEncoder_SKIP_DEFAULT_TEMPLATE_INSTANTIATION
-template class Encoder<MCP42xxx,EEPROMClass,Print>;
+#include <EEPROM.h>
+template class Encoder<DefaultReferenceCalibrator,EEPROMClass,Print>;
 #endif
 
 }

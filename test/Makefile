@@ -11,7 +11,7 @@ CPPFLAGS += -isystem $(GTEST_DIR)/include -isystem $(GMOCK_DIR)/include
 CXXFLAGS += -g -Wall -Wextra -Wno-unused-parameter -pthread
 
 # All tests produced by this Makefile.
-TESTS = encoder_unittest interface_unittest
+TESTS = encoder_unittest interface_unittest calibrator_unittest
 
 # All Google Test headers.
 GTEST_HEADERS = $(GTEST_DIR)/include/gtest/*.h \
@@ -52,31 +52,29 @@ gmock_main.a : gmock-all.o gtest-all.o gmock_main.o
 $(TEST_DIR)/Arduino.o : $(TEST_DIR)/stubs/Arduino.cpp $(TEST_DIR)/stubs/Arduino.h 
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(TEST_DIR)/stubs/Arduino.cpp
 
-$(TEST_DIR)/EEPROM.o : $(TEST_DIR)/stubs/EEPROM.cpp $(TEST_DIR)/stubs/EEPROM.h
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(TEST_DIR)/stubs/EEPROM.cpp
-
-$(TEST_DIR)/Wire.o : $(TEST_DIR)/stubs/Wire.cpp $(TEST_DIR)/stubs/Wire.h
-	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -c $(TEST_DIR)/stubs/Wire.cpp
-
 # Encoder Unit Test
 encoder_unittest.o : $(TEST_DIR)/encoder_unittest.cpp \
 					 $(TEST_DIR)/Arduino.o \
-					 $(TEST_DIR)/EEPROM.o \
-					 $(TEST_DIR)/Wire.o \
                      $(GTEST_HEADERS)
 	$(CXX) $(CPPFLAGS) -I$(TEST_DIR)/stubs -I$(USER_DIR) -I$(TEST_DIR) $(CXXFLAGS) -c $(TEST_DIR)/encoder_unittest.cpp
 
-encoder_unittest : encoder_unittest.o $(TEST_DIR)/Arduino.o $(TEST_DIR)/EEPROM.o $(TEST_DIR)/Wire.o gmock_main.a
+encoder_unittest : encoder_unittest.o $(TEST_DIR)/Arduino.o gmock_main.a
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -lpthread $^ -o $@
-
 
 # Interface Unit Test
 interface_unittest.o : $(TEST_DIR)/interface_unittest.cpp \
 			 $(TEST_DIR)/Arduino.o \
-			 $(TEST_DIR)/EEPROM.o \
-			 $(TEST_DIR)/Wire.o \
              $(GTEST_HEADERS)
 	$(CXX) $(CPPFLAGS) -I$(TEST_DIR)/stubs -I$(USER_DIR) -I$(TEST_DIR) $(CXXFLAGS) -c $(TEST_DIR)/interface_unittest.cpp
 
-interface_unittest : interface_unittest.o $(TEST_DIR)/Arduino.o $(TEST_DIR)/EEPROM.o $(TEST_DIR)/Wire.o gmock_main.a
+interface_unittest : interface_unittest.o $(TEST_DIR)/Arduino.o gmock_main.a
+	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -lpthread $^ -o $@
+
+# Calibrator Unit Test
+calibrator_unittest.o : $(TEST_DIR)/calibrator_unittest.cpp \
+			 $(TEST_DIR)/Arduino.o \
+             $(GTEST_HEADERS)
+	$(CXX) $(CPPFLAGS) -I$(TEST_DIR)/stubs -I$(USER_DIR) -I$(TEST_DIR) $(CXXFLAGS) -c $(TEST_DIR)/calibrator_unittest.cpp
+
+calibrator_unittest : calibrator_unittest.o $(TEST_DIR)/Arduino.o gmock_main.a
 	$(CXX) $(CPPFLAGS) $(CXXFLAGS) -lpthread $^ -o $@
